@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import {
   ExternalLink,
   FileSpreadsheet,
@@ -28,16 +28,30 @@ import {
   type WorkspaceEntry,
 } from "@/lib/workspace";
 
-type Pending = { kind: "delete" | "overwrite"; name: string; run: () => Promise<void> };
+type Pending = {
+  kind: "delete" | "overwrite";
+  name: string;
+  run: () => Promise<void>;
+  cancel?: () => void;
+};
+
+/** Imperative bridge so Eva's file agent can act on the approved folder. */
+export type WorkspaceBridge = {
+  dir: DirectoryHandleLike;
+  refresh: () => Promise<void>;
+  requestConfirm: (kind: "delete" | "overwrite", target: string) => Promise<boolean>;
+};
 
 export function WorkspacePanel({
   delay,
   onEntries,
   onDirectory,
+  bridgeRef,
 }: {
   delay?: number;
   onEntries?: (dir: string | null, entries: WorkspaceEntry[]) => void;
   onDirectory?: (dir: DirectoryHandleLike | null) => void;
+  bridgeRef?: MutableRefObject<WorkspaceBridge | null>;
 }) {
   const dirRef = useRef<DirectoryHandleLike | null>(null);
   const [dirName, setDirName] = useState<string | null>(null);
@@ -124,8 +138,30 @@ export function WorkspacePanel({
     }
   };
 
-  const supported = isFileSystemSupported();
-  const embedded = isEmbedded();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const supported = mounted ? isFileSystemSupported() : true;
+  const embedded = mounted ? isEmbedded() : false;
+
+  const requestConfirm = useCallback(
+    (kind: "delete" | "overwrite", name: string) =>
+      new Promise<boolean>((resolve) =>
+        setPending({
+          kind,
+          name,
+          run: async () => resolve(true),
+          cancel: () => resolve(false),
+        }),
+      ),
+    [],
+  );
+
+  useEffect(() => {
+    if (!bridgeRef) return;
+    bridgeRef.current = dirRef.current
+      ? { dir: dirRef.current, refresh, requestConfirm }
+      : null;
+  }, [bridgeRef, dirName, refresh, requestConfirm]);
 
   const compileUpload = async (file: File) => {
     setBusy(true);
@@ -275,7 +311,10 @@ export function WorkspacePanel({
               Confirm
             </button>
             <button
-              onClick={() => setPending(null)}
+              onClick={() => {
+                pending.cancel?.();
+                setPending(null);
+              }}
               className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition hover:text-foreground"
             >
               Cancel

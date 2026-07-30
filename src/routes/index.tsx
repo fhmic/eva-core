@@ -21,7 +21,8 @@ import { MediaPanel } from "@/components/eva/MediaPanel";
 import { parseMediaIntent } from "@/lib/media-intents";
 import type { DirectoryHandleLike } from "@/lib/workspace";
 import { speak, stopSpeaking, useVoice } from "@/components/eva/useVoice";
-import { WorkspacePanel } from "@/components/eva/WorkspacePanel";
+import { WorkspacePanel, type WorkspaceBridge } from "@/components/eva/WorkspacePanel";
+import { parseToolCalls, runToolCalls } from "@/lib/file-agent";
 import type { WorkspaceEntry } from "@/lib/workspace";
 import { evaChat } from "@/lib/eva.functions";
 
@@ -74,11 +75,12 @@ function EvaDashboard() {
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   const workspaceRef = useRef<string>("");
+  const bridgeRef = useRef<WorkspaceBridge | null>(null);
   const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) => {
     workspaceRef.current = dir
       ? `[Workspace context] Approved local folder: /${dir}. Contents: ${
           entries.map((e) => `${e.name}${e.kind === "directory" ? "/" : ""}`).join(", ") || "empty"
-        }. You can guide Felix to compile any spreadsheet there into a presentation from the Local Workspace panel.`
+        }. You have live disk tools (create_folder, write_file, move_file, delete_file, read_file, list_directory) bound to this root — emit eva-tool blocks to execute them.`
       : "";
   }, []);
 
@@ -145,10 +147,48 @@ function EvaDashboard() {
             )
           : payload;
         const { reply } = await chat({ data: { messages: withContext } });
-        setMessages((m) => [...m, { role: "assistant", content: reply }]);
+        const { calls, cleaned } = parseToolCalls(reply);
+        const bridge = bridgeRef.current;
+
+        if (calls.length && !bridge) {
+          const notice =
+            (cleaned ? `${cleaned}\n\n` : "") +
+            "I need disk access first, Felix — grant a folder in the Local Workspace panel and I'll execute that immediately.";
+          setMessages((m) => [...m, { role: "assistant", content: notice }]);
+          if (voiceReply) {
+            setSpeaking(true);
+            speak(notice, () => setSpeaking(false));
+          }
+          return;
+        }
+
+        let spoken = cleaned || reply;
+        setMessages((m) => [...m, { role: "assistant", content: spoken }]);
+
+        if (calls.length && bridge) {
+          const { results, tree } = await runToolCalls(bridge.dir, calls, bridge.requestConfirm);
+          await bridge.refresh();
+          const report = results.map((r) => `- ${r.ok ? "OK" : "FAILED"}: ${r.message}`).join("\n");
+          setMessages((m) => [
+            ...m,
+            { role: "assistant", content: `**Disk agent report**\n${report}` },
+          ]);
+          const followUp: Msg[] = [
+            ...next,
+            { role: "assistant", content: spoken },
+            {
+              role: "user",
+              content: `[file agent verification]\n${report}\n\nVerified contents of /${bridge.dir.name}:\n${tree.join("\n") || "empty"}\n\nConfirm the outcome to Felix in one or two sentences.`,
+            },
+          ];
+          const confirmation = await chat({ data: { messages: followUp.slice(-20) } });
+          spoken = parseToolCalls(confirmation.reply).cleaned || confirmation.reply;
+          setMessages((m) => [...m, { role: "assistant", content: spoken }]);
+        }
+
         if (voiceReply) {
           setSpeaking(true);
-          speak(reply, () => setSpeaking(false));
+          speak(spoken, () => setSpeaking(false));
         }
       } catch (err) {
         setMessages((m) => [
@@ -217,6 +257,7 @@ function EvaDashboard() {
           <div className="space-y-4">
             <WorkspacePanel
               delay={40}
+              bridgeRef={bridgeRef}
               onEntries={onWorkspace}
               onDirectory={(dir: DirectoryHandleLike | null) => void media.indexDirectory(dir)}
             />

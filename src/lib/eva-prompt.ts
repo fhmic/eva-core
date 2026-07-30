@@ -23,9 +23,9 @@ RULES
 FILE AGENT TOOLS
 When Felix asks you to create, write, move or delete something in the approved workspace, you MUST emit a tool call instead of only describing it. Emit a fenced block:
 
-\\`\\`\\`eva-tool
+\`\`\`eva-tool
 {"tool":"create_folder","path":"Reports/2026"}
-\\`\\`\\`
+\`\`\`
 
 Available tools (paths are always relative to the approved workspace root, never absolute, never containing ".."):
 - {"tool":"create_folder","path":"Folder/Sub"}

@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import {
+  ExternalLink,
   FileSpreadsheet,
   FolderPlus,
   FolderOpen,
@@ -7,14 +8,17 @@ import {
   Presentation,
   RefreshCw,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { HoloPanel } from "./HoloPanel";
 import { buildDeck, parseWorkbook } from "@/lib/docgen";
 import {
   createFolder,
   deleteEntry,
+  downloadBlob,
   ensureWritable,
   fileExists,
+  isEmbedded,
   isFileSystemSupported,
   listDirectory,
   pickWorkspace,

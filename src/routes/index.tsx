@@ -98,7 +98,14 @@ function EvaDashboard() {
       setInput("");
       setThinking(true);
       try {
-        const { reply } = await chat({ data: { messages: next.slice(-20) } });
+        const payload = next.slice(-20);
+        const ctx = workspaceRef.current;
+        const withContext: Msg[] = ctx
+          ? payload.map((m, i) =>
+              i === payload.length - 1 ? { ...m, content: `${ctx}\n\n${m.content}` } : m,
+            )
+          : payload;
+        const { reply } = await chat({ data: { messages: withContext } });
         setMessages((m) => [...m, { role: "assistant", content: reply }]);
         if (voiceReply) {
           setSpeaking(true);

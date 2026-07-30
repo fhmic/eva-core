@@ -13,10 +13,13 @@ import {
   EmailWidget,
   NewsWidget,
   RadarWidget,
-  SpotifyWidget,
   SystemHealthWidget,
   WeatherWidget,
 } from "@/components/eva/Widgets";
+import { MediaProvider, useMedia } from "@/components/eva/MediaContext";
+import { MediaPanel } from "@/components/eva/MediaPanel";
+import { parseMediaIntent } from "@/lib/media-intents";
+import type { DirectoryHandleLike } from "@/lib/workspace";
 import { speak, stopSpeaking, useVoice } from "@/components/eva/useVoice";
 import { WorkspacePanel } from "@/components/eva/WorkspacePanel";
 import type { WorkspaceEntry } from "@/lib/workspace";
@@ -41,13 +44,22 @@ export const Route = createFileRoute("/")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
-  component: EvaDashboard,
+  component: EvaRoute,
 });
+
+function EvaRoute() {
+  return (
+    <MediaProvider>
+      <EvaDashboard />
+    </MediaProvider>
+  );
+}
 
 type Msg = { role: "user" | "assistant"; content: string };
 
 function EvaDashboard() {
   const chat = useServerFn(evaChat);
+  const media = useMedia();
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "assistant",
@@ -93,6 +105,33 @@ function EvaDashboard() {
       const clean = text.trim();
       if (!clean || thinking) return;
       stopSpeaking();
+
+      const intent = parseMediaIntent(clean);
+      if (intent) {
+        setMessages((m) => [...m, { role: "user", content: clean }]);
+        setInput("");
+        let reply = "";
+        if (intent.type === "play_local_track") reply = await media.playLocalByQuery(intent.query);
+        else if (intent.type === "stream_web_music")
+          reply = await media.streamWebMusic(intent.track, intent.artist);
+        else if (intent.type === "search_local_music") {
+          const hits = media.searchLocalMusic(intent.query, intent.folderPath);
+          media.setLastResults(hits);
+          reply = hits.length
+            ? `I found ${hits.length} local match${hits.length === 1 ? "" : "es"}, Felix. Top result: ${hits[0].title} by ${hits[0].artist}.`
+            : `Nothing in your indexed folders matches "${intent.query}", Felix. Say "play ${intent.query} on the web" and I'll stream it instead.`;
+        } else if (intent.type === "set_volume") {
+          media.setVolume(intent.volume);
+          reply = `Volume set to ${Math.round(intent.volume * 100)} percent.`;
+        } else reply = media.mediaControl(intent.action);
+        setMessages((m) => [...m, { role: "assistant", content: reply }]);
+        if (voiceReply) {
+          setSpeaking(true);
+          speak(reply, () => setSpeaking(false));
+        }
+        return;
+      }
+
       const next: Msg[] = [...messagesRef.current, { role: "user", content: clean }];
       setMessages(next);
       setInput("");
@@ -124,7 +163,7 @@ function EvaDashboard() {
         setThinking(false);
       }
     },
-    [chat, thinking],
+    [chat, media, thinking],
   );
 
   const onCommand = useCallback((text: string) => void send(text, true), [send]);
@@ -176,7 +215,11 @@ function EvaDashboard() {
 
         <div className="grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)_300px]">
           <div className="space-y-4">
-            <WorkspacePanel delay={40} onEntries={onWorkspace} />
+            <WorkspacePanel
+              delay={40}
+              onEntries={onWorkspace}
+              onDirectory={(dir: DirectoryHandleLike | null) => void media.indexDirectory(dir)}
+            />
             <SystemHealthWidget delay={60} />
             <RadarWidget delay={120} />
             <WeatherWidget delay={180} />
@@ -278,7 +321,7 @@ function EvaDashboard() {
           </div>
 
           <div className="space-y-4">
-            <SpotifyWidget delay={60} />
+            <MediaPanel delay={60} />
             <CalendarWidget delay={120} />
             <EmailWidget delay={180} />
             <NewsWidget delay={240} />

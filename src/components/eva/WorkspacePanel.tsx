@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import {
+  ExternalLink,
   FileSpreadsheet,
   FolderPlus,
   FolderOpen,
@@ -7,14 +8,17 @@ import {
   Presentation,
   RefreshCw,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { HoloPanel } from "./HoloPanel";
 import { buildDeck, parseWorkbook } from "@/lib/docgen";
 import {
   createFolder,
   deleteEntry,
+  downloadBlob,
   ensureWritable,
   fileExists,
+  isEmbedded,
   isFileSystemSupported,
   listDirectory,
   pickWorkspace,
@@ -118,6 +122,21 @@ export function WorkspacePanel({
   };
 
   const supported = isFileSystemSupported();
+  const embedded = isEmbedded();
+
+  const compileUpload = async (file: File) => {
+    setBusy(true);
+    try {
+      const sheets = await parseWorkbook(file);
+      const title = file.name.replace(/\.[^.]+$/, "");
+      downloadBlob(await buildDeck(title, sheets), `${title}.pptx`);
+      setStatus(`Presentation generated: ${title}.pptx`);
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Deck compilation failed");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <HoloPanel
@@ -139,18 +158,44 @@ export function WorkspacePanel({
       {!dirName ? (
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            {supported
-              ? "Grant Eva access to a single approved folder. All reads and writes stay inside it."
-              : "Local file access requires a Chromium desktop browser."}
+            {!supported
+              ? "Local folder access requires a Chromium desktop browser."
+              : embedded
+                ? "Folder access is blocked inside the embedded preview. Open EVA in its own tab to grant access."
+                : "Grant Eva access to a single approved folder. All reads and writes stay inside it."}
           </p>
-          <button
-            onClick={() => void grant()}
-            disabled={!supported}
-            className="flex w-full items-center justify-center gap-2 rounded-full border border-accent/50 bg-secondary px-4 py-2 text-sm text-accent transition hover:scale-[1.02] disabled:opacity-40"
-            style={{ boxShadow: "var(--shadow-glow)" }}
-          >
-            <FolderOpen size={14} /> Grant folder access
-          </button>
+          {supported && embedded ? (
+            <button
+              onClick={() => window.open(window.location.href, "_blank", "noopener")}
+              className="flex w-full items-center justify-center gap-2 rounded-full border border-accent/50 bg-secondary px-4 py-2 text-sm text-accent transition hover:scale-[1.02]"
+              style={{ boxShadow: "var(--shadow-glow)" }}
+            >
+              <ExternalLink size={14} /> Open EVA in a new tab
+            </button>
+          ) : (
+            <button
+              onClick={() => void grant()}
+              disabled={!supported}
+              className="flex w-full items-center justify-center gap-2 rounded-full border border-accent/50 bg-secondary px-4 py-2 text-sm text-accent transition hover:scale-[1.02] disabled:opacity-40"
+              style={{ boxShadow: "var(--shadow-glow)" }}
+            >
+              <FolderOpen size={14} /> Grant folder access
+            </button>
+          )}
+
+          <label className="flex cursor-pointer items-center justify-center gap-2 rounded-full border border-border px-4 py-2 text-xs text-muted-foreground transition hover:text-foreground">
+            <Upload size={13} /> Compile a spreadsheet to .pptx
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) void compileUpload(f);
+              }}
+            />
+          </label>
         </div>
       ) : (
         <div className="space-y-3">

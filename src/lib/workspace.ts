@@ -27,6 +27,26 @@ export function isFileSystemSupported() {
   return typeof window !== "undefined" && "showDirectoryPicker" in window;
 }
 
+/** Preview/embedded frames are blocked from opening the OS directory picker. */
+export function isEmbedded() {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.self !== window.top;
+  } catch {
+    return true;
+  }
+}
+
+export function downloadBlob(data: BlobPart, filename: string) {
+  const url = URL.createObjectURL(data instanceof Blob ? data : new Blob([data]));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+
 export async function pickWorkspace(): Promise<DirectoryHandleLike> {
   if (!isFileSystemSupported()) {
     throw new Error(

@@ -18,6 +18,8 @@ import {
   WeatherWidget,
 } from "@/components/eva/Widgets";
 import { speak, stopSpeaking, useVoice } from "@/components/eva/useVoice";
+import { WorkspacePanel } from "@/components/eva/WorkspacePanel";
+import type { WorkspaceEntry } from "@/lib/workspace";
 import { evaChat } from "@/lib/eva.functions";
 
 export const Route = createFileRoute("/")({
@@ -59,6 +61,14 @@ function EvaDashboard() {
   const logRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+  const workspaceRef = useRef<string>("");
+  const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) => {
+    workspaceRef.current = dir
+      ? `[Workspace context] Approved local folder: /${dir}. Contents: ${
+          entries.map((e) => `${e.name}${e.kind === "directory" ? "/" : ""}`).join(", ") || "empty"
+        }. You can guide Felix to compile any spreadsheet there into a presentation from the Local Workspace panel.`
+      : "";
+  }, []);
 
   useEffect(() => {
     const tick = () =>
@@ -88,7 +98,14 @@ function EvaDashboard() {
       setInput("");
       setThinking(true);
       try {
-        const { reply } = await chat({ data: { messages: next.slice(-20) } });
+        const payload = next.slice(-20);
+        const ctx = workspaceRef.current;
+        const withContext: Msg[] = ctx
+          ? payload.map((m, i) =>
+              i === payload.length - 1 ? { ...m, content: `${ctx}\n\n${m.content}` } : m,
+            )
+          : payload;
+        const { reply } = await chat({ data: { messages: withContext } });
         setMessages((m) => [...m, { role: "assistant", content: reply }]);
         if (voiceReply) {
           setSpeaking(true);
@@ -159,6 +176,7 @@ function EvaDashboard() {
 
         <div className="grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)_300px]">
           <div className="space-y-4">
+            <WorkspacePanel delay={40} onEntries={onWorkspace} />
             <SystemHealthWidget delay={60} />
             <RadarWidget delay={120} />
             <WeatherWidget delay={180} />

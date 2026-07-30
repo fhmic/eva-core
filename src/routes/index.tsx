@@ -176,6 +176,7 @@ function EvaDashboard() {
 
         <div className="grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)_300px]">
           <div className="space-y-4">
+            <WorkspacePanel delay={40} onEntries={onWorkspace} />
             <SystemHealthWidget delay={60} />
             <RadarWidget delay={120} />
             <WeatherWidget delay={180} />

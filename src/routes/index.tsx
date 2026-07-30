@@ -18,6 +18,8 @@ import {
   WeatherWidget,
 } from "@/components/eva/Widgets";
 import { speak, stopSpeaking, useVoice } from "@/components/eva/useVoice";
+import { WorkspacePanel } from "@/components/eva/WorkspacePanel";
+import type { WorkspaceEntry } from "@/lib/workspace";
 import { evaChat } from "@/lib/eva.functions";
 
 export const Route = createFileRoute("/")({

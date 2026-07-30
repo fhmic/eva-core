@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.eva_touch_thread() FROM PUBLIC, anon, authenticated;

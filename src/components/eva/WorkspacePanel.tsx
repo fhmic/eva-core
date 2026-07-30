@@ -46,11 +46,13 @@ export function WorkspacePanel({
   delay,
   onEntries,
   onDirectory,
+  onAudit,
   bridgeRef,
 }: {
   delay?: number;
   onEntries?: (dir: string | null, entries: WorkspaceEntry[]) => void;
   onDirectory?: (dir: DirectoryHandleLike | null) => void;
+  onAudit?: (action: string, path: string | null, ok: boolean, detail: string | null) => void;
   bridgeRef?: MutableRefObject<WorkspaceBridge | null>;
 }) {
   const dirRef = useRef<DirectoryHandleLike | null>(null);
@@ -59,6 +61,7 @@ export function WorkspacePanel({
   const [status, setStatus] = useState("No workspace granted");
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<Pending | null>(null);
+
 
   const refresh = useCallback(async () => {
     const dir = dirRef.current;
@@ -94,9 +97,12 @@ export function WorkspacePanel({
     try {
       await createFolder(dir, name.trim());
       setStatus(`Created folder ${name.trim()}`);
+      onAudit?.("create_folder", name.trim(), true, `Folder created from the workspace panel.`);
       await refresh();
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : "Could not create folder");
+      const msg = err instanceof Error ? err.message : "Could not create folder";
+      setStatus(msg);
+      onAudit?.("create_folder", name.trim(), false, msg);
     }
   };
 
@@ -107,6 +113,7 @@ export function WorkspacePanel({
       run: async () => {
         await deleteEntry(dirRef.current!, entry.name, entry.kind === "directory");
         setStatus(`Deleted ${entry.name}`);
+        onAudit?.("delete_file", entry.name, true, "Deleted from the workspace panel.");
         await refresh();
       },
     });
@@ -124,8 +131,10 @@ export function WorkspacePanel({
       const write = async () => {
         await writeFile(dir, target, blob);
         setStatus(`Presentation saved as ${target}`);
+        onAudit?.("write_file", target, true, `Presentation compiled from ${entry.name}.`);
         await refresh();
       };
+
       if (await fileExists(dir, target)) {
         setPending({ kind: "overwrite", name: target, run: write });
       } else {

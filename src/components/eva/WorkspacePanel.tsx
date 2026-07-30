@@ -33,9 +33,11 @@ type Pending = { kind: "delete" | "overwrite"; name: string; run: () => Promise<
 export function WorkspacePanel({
   delay,
   onEntries,
+  onDirectory,
 }: {
   delay?: number;
   onEntries?: (dir: string | null, entries: WorkspaceEntry[]) => void;
+  onDirectory?: (dir: DirectoryHandleLike | null) => void;
 }) {
   const dirRef = useRef<DirectoryHandleLike | null>(null);
   const [dirName, setDirName] = useState<string | null>(null);
@@ -63,6 +65,7 @@ export function WorkspacePanel({
       setDirName(dir.name);
       setStatus(`Access granted to /${dir.name}`);
       await refresh();
+      onDirectory?.(dir);
     } catch (err) {
       if ((err as DOMException)?.name === "AbortError") return;
       setStatus(err instanceof Error ? err.message : "Access failed");

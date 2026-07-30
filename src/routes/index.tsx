@@ -61,6 +61,14 @@ function EvaDashboard() {
   const logRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+  const workspaceRef = useRef<string>("");
+  const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) => {
+    workspaceRef.current = dir
+      ? `[Workspace context] Approved local folder: /${dir}. Contents: ${
+          entries.map((e) => `${e.name}${e.kind === "directory" ? "/" : ""}`).join(", ") || "empty"
+        }. You can guide Felix to compile any spreadsheet there into a presentation from the Local Workspace panel.`
+      : "";
+  }, []);
 
   useEffect(() => {
     const tick = () =>

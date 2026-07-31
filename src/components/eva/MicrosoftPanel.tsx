@@ -240,7 +240,6 @@ export function ContactsWidget({ delay }: { delay?: number }) {
   );
 }
 
-import { useState } from "react";
 
 function ContactSearch({ contacts }: { contacts: { id: string; name: string; email: string }[] }) {
   const [q, setQ] = useState("");

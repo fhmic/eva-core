@@ -1,23 +1,38 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useNavigate } from "@tanstack/react-router";
 import ReactMarkdown from "react-markdown";
-import { LogOut, Mic, MicOff, Send, Sparkles, Square } from "lucide-react";
+import {
+  Brain,
+  FolderCog,
+  LogOut,
+  Mail,
+  Mic,
+  MicOff,
+  Music4,
+  Radar as RadarIcon,
+  Send,
+  Square,
+  Terminal,
+} from "lucide-react";
 
-import { ParticleField } from "@/components/eva/ParticleField";
-import { AICore } from "@/components/eva/AICore";
+import { NebulaField } from "@/components/eva/NebulaField";
+import { EvaCore } from "@/components/eva/EvaCore";
+import { SubAgentOrbit, type SubAgent } from "@/components/eva/SubAgentOrbit";
 import { Waveform } from "@/components/eva/Waveform";
 import { HoloPanel } from "@/components/eva/HoloPanel";
-import {
-  CalendarWidget,
-  EmailWidget,
-  NewsWidget,
-  RadarWidget,
-  SystemHealthWidget,
-  WeatherWidget,
-} from "@/components/eva/Widgets";
+import { NewsWidget, RadarWidget, SystemStatusWidget, WeatherWidget } from "@/components/eva/Widgets";
 import { MediaProvider, useMedia } from "@/components/eva/MediaContext";
 import { MediaPanel } from "@/components/eva/MediaPanel";
+import { MicrosoftProvider, useMicrosoft } from "@/components/eva/MicrosoftContext";
+import {
+  ContactsWidget,
+  InboxWidget,
+  MicrosoftConnectionPanel,
+  OneDriveWidget,
+  ScheduleWidget,
+  TeamsWidget,
+} from "@/components/eva/MicrosoftPanel";
 import { AuditLogPanel } from "@/components/eva/AuditLogPanel";
 import { SessionsPanel } from "@/components/eva/SessionsPanel";
 import { parseMediaIntent } from "@/lib/media-intents";
@@ -47,9 +62,11 @@ type Msg = { role: "user" | "assistant"; content: string };
 
 export function EvaDashboard({ threadId }: { threadId: string }) {
   return (
-    <MediaProvider>
-      <Dashboard key={threadId} threadId={threadId} />
-    </MediaProvider>
+    <MicrosoftProvider>
+      <MediaProvider>
+        <Dashboard key={threadId} threadId={threadId} />
+      </MediaProvider>
+    </MicrosoftProvider>
   );
 }
 
@@ -60,6 +77,7 @@ function auditPath(call: EvaToolCall) {
 function Dashboard({ threadId }: { threadId: string }) {
   const chat = useServerFn(evaChat);
   const media = useMedia();
+  const ms = useMicrosoft();
   const navigate = useNavigate();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [threads, setThreads] = useState<ThreadRow[]>([]);
@@ -68,6 +86,7 @@ function Dashboard({ threadId }: { threadId: string }) {
   const [thinking, setThinking] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [clock, setClock] = useState("");
+  const [workspaceActive, setWorkspaceActive] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesRef = useRef(messages);
@@ -77,6 +96,7 @@ function Dashboard({ threadId }: { threadId: string }) {
   const bridgeRef = useRef<WorkspaceBridge | null>(null);
 
   const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) => {
+    setWorkspaceActive(!!dir);
     workspaceRef.current = dir
       ? `[Workspace context] Approved local folder: /${dir}. Contents: ${
           entries.map((e) => `${e.name}${e.kind === "directory" ? "/" : ""}`).join(", ") || "empty"
@@ -326,14 +346,80 @@ function Dashboard({ threadId }: { threadId: string }) {
         ? "listening"
         : "idle";
 
+  /* ---------------- sub-agent constellation ---------------- */
+
+  const agents = useMemo<SubAgent[]>(
+    () => [
+      {
+        id: "cognition",
+        name: "Cognition",
+        icon: Brain,
+        color: "oklch(0.68 0.22 305)",
+        status: thinking ? "Reasoning over your directive" : "Standing by",
+        active: thinking,
+        radius: 168,
+        period: 34,
+        offset: 0,
+      },
+      {
+        id: "files",
+        name: "File Agent",
+        icon: FolderCog,
+        color: "oklch(0.87 0.16 195)",
+        status: workspaceActive ? "Disk bridge armed" : "No folder granted",
+        active: workspaceActive,
+        radius: 200,
+        period: 44,
+        offset: 72,
+      },
+      {
+        id: "media",
+        name: "Media Engine",
+        icon: Music4,
+        color: "oklch(0.82 0.17 85)",
+        status: media.current ? `${media.playing ? "Playing" : "Paused"} · ${media.current.title}` : "Idle",
+        active: media.playing,
+        radius: 168,
+        period: 38,
+        offset: 144,
+      },
+      {
+        id: "comms",
+        name: "Microsoft 365",
+        icon: Mail,
+        color: "oklch(0.75 0.16 245)",
+        status: ms.connected ? "Graph linked" : ms.configured ? "Awaiting sign-in" : "Not configured",
+        active: ms.connected,
+        radius: 200,
+        period: 50,
+        offset: 216,
+      },
+      {
+        id: "voice",
+        name: "Voice Relay",
+        icon: RadarIcon,
+        color: "oklch(0.9 0.15 205)",
+        status: voice.awake ? "Wake word active" : voice.listening ? "Passive listening" : "Offline",
+        active: voice.listening,
+        radius: 168,
+        period: 42,
+        offset: 288,
+      },
+    ],
+    [thinking, workspaceActive, media.current, media.playing, ms.connected, ms.configured, voice.awake, voice.listening],
+  );
+
+  const connections = agents.filter((a) => a.active).length;
+  const task = thinking ? "Reasoning" : speaking ? "Speaking" : voice.awake ? "Listening" : "Idle";
+
   return (
     <main className="relative min-h-screen overflow-x-hidden">
-      <ParticleField />
+      <NebulaField />
 
-      <div className="relative z-10 mx-auto max-w-[1600px] px-4 py-5 lg:px-8">
-        <header className="animate-fade-up mb-5 flex flex-wrap items-center justify-between gap-3">
+      <div className="relative z-10 mx-auto max-w-[1700px] px-4 py-5 lg:px-8">
+        <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="font-display text-2xl font-bold tracking-[0.35em] text-primary text-glow">
+            <h1 className="font-display text-2xl font-bold tracking-[0.4em] text-primary text-glow">
               EVA
             </h1>
             <p className="label-hud">Executive Virtual Assistant · Felix Michael</p>
@@ -361,7 +447,8 @@ function Dashboard({ threadId }: { threadId: string }) {
           </div>
         </header>
 
-        <div className="grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)_300px]">
+        <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)_320px]">
+          {/* Left rail */}
           <div className="space-y-4">
             <WorkspacePanel
               delay={40}
@@ -371,66 +458,67 @@ function Dashboard({ threadId }: { threadId: string }) {
               onDirectory={(dir: DirectoryHandleLike | null) => void media.indexDirectory(dir)}
             />
             <AuditLogPanel delay={80} version={auditVersion} />
-            <SystemHealthWidget delay={120} />
+            <MediaPanel delay={120} />
             <RadarWidget delay={160} />
-            <WeatherWidget delay={200} />
           </div>
 
+          {/* Command centre */}
           <div className="space-y-4">
-            <div className="holo-panel animate-fade-up p-5">
-              <AICore state={coreState} level={voice.level} />
-              <div className="mt-4">
+            <div className="glass-panel relative flex min-h-[440px] items-center justify-center overflow-hidden p-4">
+              <SubAgentOrbit agents={agents} />
+              <EvaCore state={coreState} level={voice.level} size={300} />
+              <div className="absolute inset-x-0 bottom-3 px-4">
                 <Waveform level={voice.level} active={voice.listening || speaking} />
-              </div>
-              <p className="mt-2 min-h-5 text-center text-xs text-muted-foreground">
-                {voice.transcript ||
-                  (voice.supported
-                    ? voice.listening
-                      ? 'Say "Hello Eva" to activate'
-                      : "Voice interface offline"
-                    : "Voice recognition unavailable in this browser")}
-              </p>
-              <div className="mt-4 flex justify-center gap-3">
-                <button
-                  onClick={() => (voice.listening ? voice.stop() : void voice.start())}
-                  disabled={!voice.supported}
-                  className="flex items-center gap-2 rounded-full border border-accent/50 bg-secondary px-5 py-2 text-sm text-accent transition hover:scale-[1.03] disabled:opacity-40"
-                  style={{ boxShadow: "var(--shadow-glow)" }}
-                >
-                  {voice.listening ? <MicOff size={15} /> : <Mic size={15} />}
-                  {voice.listening ? "End session" : "Start listening"}
-                </button>
-                {speaking && (
+                <p className="mt-2 min-h-5 text-center text-xs text-muted-foreground">
+                  {voice.transcript ||
+                    (voice.supported
+                      ? voice.listening
+                        ? 'Say "Hello Eva" to activate'
+                        : "Voice interface offline"
+                      : "Voice recognition unavailable in this browser")}
+                </p>
+                <div className="mt-3 flex justify-center gap-3">
                   <button
-                    onClick={() => {
-                      stopSpeaking();
-                      setSpeaking(false);
-                    }}
-                    className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-muted-foreground transition hover:text-foreground"
+                    onClick={() => (voice.listening ? voice.stop() : void voice.start())}
+                    disabled={!voice.supported}
+                    className="flex items-center gap-2 rounded-full border border-accent/50 bg-secondary/70 px-5 py-2 text-sm text-accent transition hover:scale-[1.03] disabled:opacity-40"
+                    style={{ boxShadow: "var(--shadow-glow)" }}
                   >
-                    <Square size={13} /> Interrupt
+                    {voice.listening ? <MicOff size={15} /> : <Mic size={15} />}
+                    {voice.listening ? "End session" : "Start listening"}
                   </button>
-                )}
+                  {speaking && (
+                    <button
+                      onClick={() => {
+                        stopSpeaking();
+                        setSpeaking(false);
+                      }}
+                      className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-muted-foreground transition hover:text-foreground"
+                    >
+                      <Square size={13} /> Interrupt
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
             <HoloPanel
               title="Response Channel"
-              icon={<Sparkles size={14} />}
+              icon={<Terminal size={14} />}
               delay={220}
               className="flex flex-col"
             >
               <div
                 ref={logRef}
-                className="max-h-[340px] min-h-[220px] space-y-3 overflow-y-auto pr-1"
+                className="max-h-[320px] min-h-[200px] space-y-3 overflow-y-auto pr-1"
               >
                 {messages.map((m, i) => (
                   <div
                     key={i}
-                    className={`animate-fade-up max-w-[88%] rounded-xl border px-3 py-2 text-sm ${
+                    className={`animate-flicker-in max-w-[88%] rounded-xl border px-3 py-2 text-sm ${
                       m.role === "user"
                         ? "ml-auto border-primary/40 bg-secondary/60 text-foreground"
-                        : "border-accent/30 bg-muted/50 text-foreground/95"
+                        : "border-accent/30 bg-muted/40 text-foreground/95"
                     }`}
                   >
                     <span className="label-hud">{m.role === "user" ? "Felix" : "Eva"}</span>
@@ -473,20 +561,29 @@ function Dashboard({ threadId }: { threadId: string }) {
                 </button>
               </form>
             </HoloPanel>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <SystemStatusWidget delay={260} connections={connections} task={task} />
+              <WeatherWidget delay={300} />
+            </div>
           </div>
 
+          {/* Right rail */}
           <div className="space-y-4">
+            <MicrosoftConnectionPanel delay={40} />
+            <InboxWidget delay={80} />
+            <ScheduleWidget delay={120} />
+            <TeamsWidget delay={160} />
+            <OneDriveWidget delay={200} />
+            <ContactsWidget delay={240} />
             <SessionsPanel
-              delay={40}
+              delay={280}
               threads={threads}
               activeId={threadId}
               onCreate={() => void newSession()}
               onDelete={(id) => void removeSession(id)}
             />
-            <MediaPanel delay={80} />
-            <CalendarWidget delay={140} />
-            <EmailWidget delay={200} />
-            <NewsWidget delay={260} />
+            <NewsWidget delay={320} />
           </div>
         </div>
       </div>

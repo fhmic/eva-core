@@ -70,6 +70,8 @@
   --input: oklch(0.72 0.14 210 / 25%);
   --ring: oklch(0.8 0.16 205);
   --cyan: oklch(0.87 0.16 195);
+  --violet: oklch(0.68 0.22 305);
+  --amber: oklch(0.82 0.16 78);
   --glow: oklch(0.72 0.18 230);
   --chart-1: oklch(0.8 0.16 205);
   --chart-2: oklch(0.87 0.16 195);

@@ -423,7 +423,7 @@ Behaviour:
 
 Ability to hold intellectual conversation, access and create folders, and various file type, such as pdf, ms word, powerpoint, md, text, audio, voice, etc and analyse them comprehensively. It should be able to open gmail, @connector:google_calendar:"Google Calendar"  schedule meetings, write notes with excellent data analytics skill
 
-This project was migrated from Lovable and is configured to deploy on Vercel.
+This project was migrated away from a third-party platform and is configured to deploy on Vercel.
 
 **Deployment (Vercel)**: Connect this repository to Vercel and set the environment variables described below. Use Vite build (`npm run build`) and the generated `dist` output.
 

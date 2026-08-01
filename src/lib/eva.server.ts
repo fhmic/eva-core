@@ -1,6 +1,46 @@
 import { EVA_SYSTEM_PROMPT } from "./eva-prompt";
+import { webSearch } from "./websearch.server";
 
-export type EvaMessage = { role: "user" | "assistant"; content: string };
+export type EvaMessage = { role: "user" | "assistant" | "system"; content: string };
+
+type EvaToolCall = { tool: "web_search"; query: string };
+
+const TOOL_BLOCK = /```eva-tool\s*([\s\S]*?)```/;
+
+function extractToolCall(text: string): EvaToolCall | null {
+  const match = text.match(TOOL_BLOCK);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1].trim());
+    if (parsed?.tool === "web_search" && typeof parsed.query === "string" && parsed.query.trim()) {
+      return { tool: "web_search", query: parsed.query.trim() };
+    }
+  } catch {
+    // malformed block — treat as no tool call, let the model's prose stand
+  }
+  return null;
+}
+
+async function runToolCall(call: EvaToolCall): Promise<string> {
+  if (call.tool === "web_search") {
+    try {
+      const { answer, results } = await webSearch(call.query);
+      const lines = results.map(
+        (r, i) => `${i + 1}. ${r.title} (${r.url})\n${r.content}`,
+      );
+      return [
+        `Search results for "${call.query}":`,
+        answer ? `Quick answer: ${answer}` : null,
+        ...lines,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+    } catch (err) {
+      return `Web search failed: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  }
+  return "Unknown tool.";
+}
 
 function joinMessages(messages: EvaMessage[]) {
   return messages.map((m) => `${m.role}: ${m.content}`).join("\n");
@@ -101,19 +141,38 @@ async function callHuggingFace(messages: EvaMessage[]) {
   return "";
 }
 
-export async function askEva(messages: EvaMessage[]): Promise<string> {
+async function callProvider(messages: EvaMessage[]): Promise<string> {
   // provider preference order: OpenRouter → Gemini → Groq → HuggingFace
-  try {
-    if (process.env.OPENROUTER_API_KEY) return await callOpenRouter(messages);
-    if (process.env.GOOGLE_GEMINI_API_KEY) return await callGemini(messages);
-    if (process.env.GROQ_API_KEY) return await callGroq(messages);
-    if (process.env.HUGGINGFACE_API_KEY) return await callHuggingFace(messages);
-  } catch (err) {
-    // Bubble up provider-specific errors so caller can decide how to present them
-    throw err;
-  }
+  if (process.env.OPENROUTER_API_KEY) return await callOpenRouter(messages);
+  if (process.env.GOOGLE_GEMINI_API_KEY) return await callGemini(messages);
+  if (process.env.GROQ_API_KEY) return await callGroq(messages);
+  if (process.env.HUGGINGFACE_API_KEY) return await callHuggingFace(messages);
 
   throw new Error(
     "Eva intelligence core is offline: set OPENROUTER_API_KEY or a fallback provider (GOOGLE_GEMINI_API_KEY, GROQ_API_KEY, or HUGGINGFACE_API_KEY) in your environment.",
   );
+}
+
+const MAX_TOOL_ROUNDS = 3;
+
+export async function askEva(messages: EvaMessage[]): Promise<string> {
+  const working: EvaMessage[] = [...messages];
+
+  for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+    const reply = await callProvider(working);
+    const call = extractToolCall(reply);
+
+    if (!call || round === MAX_TOOL_ROUNDS) {
+      return reply;
+    }
+
+    const toolResult = await runToolCall(call);
+    working.push(
+      { role: "assistant", content: reply },
+      { role: "system", content: `Tool result for web_search("${call.query}"):\n\n${toolResult}` },
+    );
+  }
+
+  // Unreachable, satisfies TypeScript's control-flow analysis.
+  throw new Error("Eva tool loop exited unexpectedly.");
 }

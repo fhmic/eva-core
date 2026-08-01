@@ -485,15 +485,38 @@ function Dashboard({ threadId }: { threadId: string }) {
               <SubAgentOrbit agents={agents} />
               <EvaCore state={coreState} level={voice.level} size={300} />
               <div className="absolute inset-x-0 bottom-3 px-4">
-                <Waveform level={voice.level} active={voice.listening || speaking} />
-                <p className="mt-2 min-h-5 text-center text-xs text-muted-foreground">
-                  {voice.transcript ||
-                    (voice.supported
-                      ? voice.listening
-                        ? 'Say "Hello Eva" to activate'
-                        : "Voice interface offline"
-                      : "Voice recognition unavailable in this browser")}
-                </p>
+                <Waveform
+                  level={speaking ? 0.55 : voice.level}
+                  active={(voice.listening && !speaking) || speaking}
+                />
+                <div className="mt-2 min-h-10 text-center">
+                  <p className="label-hud text-[9px]">
+                    {speaking
+                      ? "Eva speaking · mic muted"
+                      : voice.awake
+                        ? "Live transcription · command mode"
+                        : voice.listening
+                          ? "Passive — awaiting wake word"
+                          : "Voice relay offline"}
+                  </p>
+                  <p
+                    className={`mt-1 text-sm ${
+                      voice.transcript ? "text-accent text-glow" : "text-muted-foreground"
+                    }`}
+                  >
+                    {voice.transcript ||
+                      (voice.supported
+                        ? speaking
+                          ? "…"
+                          : voice.awake
+                            ? "Listening for your directive, Felix"
+                            : voice.listening
+                              ? 'Say "Hello Eva" to activate'
+                              : "Voice interface offline"
+                        : "Voice recognition unavailable in this browser")}
+                  </p>
+                </div>
+
                 <div className="mt-3 flex justify-center gap-3">
                   <button
                     onClick={() => (voice.listening ? voice.stop() : void voice.start())}

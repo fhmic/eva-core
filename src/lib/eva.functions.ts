@@ -7,7 +7,7 @@ const schema = z.object({
     .array(
       z.object({
         role: z.enum(["user", "assistant"]),
-        content: z.string().min(1).max(8000),
+        content: z.string().min(1).max(24000),
       }),
     )
     .min(1)

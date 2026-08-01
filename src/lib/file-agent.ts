@@ -25,7 +25,8 @@ export type EvaToolCall =
   | { tool: "move_file"; from: string; to: string }
   | { tool: "delete_file"; path: string }
   | { tool: "read_file"; path: string }
-  | { tool: "list_directory"; path?: string };
+  | { tool: "list_directory"; path?: string }
+  | { tool: "download_url"; url: string; path: string };
 
 export type ToolResult = { tool: string; ok: boolean; message: string; verified?: boolean };
 
@@ -38,6 +39,7 @@ const KNOWN = new Set([
   "delete_file",
   "read_file",
   "list_directory",
+  "download_url",
 ]);
 
 function coerce(value: unknown): EvaToolCall[] {

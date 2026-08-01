@@ -11,50 +11,6 @@ function normalizeApiBase(base: string | undefined, fallback: string) {
   return base.trim().replace(/\/+$/, "").replace(/\/v1$/, "");
 }
 
-async function callOpenAI(messages: EvaMessage[]) {
-  const openaiKey = process.env.OPENAI_API_KEY;
-  const openaiBase = normalizeApiBase(process.env.OPENAI_API_BASE, "https://api.openai.com");
-  const model = process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
-  const fallbackModel = "gpt-3.5-turbo";
-  const useFallback = !process.env.OPENAI_MODEL;
-
-  const makeRequest = async (modelName: string) => {
-    const url = `${openaiBase}/v1/chat/completions`;
-    return await fetch(url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: modelName, messages: [{ role: "system", content: EVA_SYSTEM_PROMPT }, ...messages] }),
-    });
-  };
-
-  const res = await makeRequest(model);
-  if (res.ok) {
-    const data = await res.json();
-    return data.choices?.[0]?.message?.content ?? "";
-  }
-
-  const body = await res.text().catch(() => "");
-  if (res.status === 429) throw new Error("Rate limit reached. Please retry shortly.");
-  if (res.status === 402) throw new Error("AI credits exhausted for this workspace.");
-  if (res.status === 404 && useFallback && model === "gpt-4o-mini") {
-    const retry = await makeRequest(fallbackModel);
-    if (retry.ok) {
-      const data = await retry.json();
-      return data.choices?.[0]?.message?.content ?? "";
-    }
-    const retryBody = await retry.text().catch(() => "");
-    throw new Error(
-      `OpenAI fallback failed for ${fallbackModel} [${retry.status}]: ${retryBody}`,
-    );
-  }
-
-  if (res.status === 404)
-    throw new Error(
-      `OpenAI request failed 404: model or endpoint not found. Confirm OPENAI_API_BASE is https://api.openai.com and OPENAI_MODEL is valid. Response: ${body}`,
-    );
-  throw new Error(`OpenAI request failed [${res.status}]: ${body}`);
-}
-
 async function callOpenRouter(messages: EvaMessage[]) {
   const key = process.env.OPENROUTER_API_KEY;
   const base = normalizeApiBase(process.env.OPENROUTER_API_BASE, "https://openrouter.ai/api");
@@ -73,6 +29,22 @@ async function callOpenRouter(messages: EvaMessage[]) {
 }
 
 async function callGemini(messages: EvaMessage[]) {
+  const key = process.env.GOOGLE_GEMINI_API_KEY;
+  const base = normalizeApiBase(process.env.GOOGLE_GEMINI_API_BASE, "https://gemini.googleapis.com");
+  const model = process.env.GOOGLE_GEMINI_MODEL || "models/text-bison-001";
+  const res = await fetch(`${base}/v1/${model}:generateMessage`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messages: [{ role: "system", content: EVA_SYSTEM_PROMPT }, ...messages].map((m) => ({ content: m.content, author: m.role })),
+    }),
+  });
+  if (!res.ok) throw new Error(`Gemini request failed [${res.status}]`);
+  const data = await res.json();
+  return data?.candidates?.[0]?.content || data?.output?.[0]?.content || "";
+}
+
+async function callGroq(messages: EvaMessage[]) {
   const key = process.env.GROQ_API_KEY;
   const base = process.env.GROQ_API_BASE || "https://api.groq.ai/v1";
   const model = process.env.GROQ_MODEL || "groq-alpha:latest";
@@ -82,7 +54,10 @@ async function callGemini(messages: EvaMessage[]) {
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({ prompt }),
   });
-  if (!res.ok) throw new Error(`Groq request failed [${res.status}]`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Groq request failed [${res.status}]: ${body}`);
+  }
   const data = await res.json();
   return data?.output?.[0]?.content ?? data?.result ?? "";
 }
@@ -108,9 +83,8 @@ async function callHuggingFace(messages: EvaMessage[]) {
 }
 
 export async function askEva(messages: EvaMessage[]): Promise<string> {
-  // provider preference order: OpenAI → OpenRouter → Gemini → Groq → HuggingFace
+  // provider preference order: OpenRouter → Gemini → Groq → HuggingFace
   try {
-    if (process.env.OPENAI_API_KEY) return await callOpenAI(messages);
     if (process.env.OPENROUTER_API_KEY) return await callOpenRouter(messages);
     if (process.env.GOOGLE_GEMINI_API_KEY) return await callGemini(messages);
     if (process.env.GROQ_API_KEY) return await callGroq(messages);
@@ -121,6 +95,6 @@ export async function askEva(messages: EvaMessage[]): Promise<string> {
   }
 
   throw new Error(
-    "Eva intelligence core is offline: set OPENAI_API_KEY or a fallback provider (GOOGLE_GEMINI_API_KEY, GROQ_API_KEY, or HUGGINGFACE_API_KEY) in your environment.",
+    "Eva intelligence core is offline: set OPENROUTER_API_KEY or a fallback provider (GOOGLE_GEMINI_API_KEY, GROQ_API_KEY, or HUGGINGFACE_API_KEY) in your environment.",
   );
 }

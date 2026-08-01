@@ -5,9 +5,8 @@
 This repository can be deployed to Vercel with your own Supabase project. High-level steps:
 
 - Create a Supabase project and copy `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`.
-- Create an OpenAI API key and set `OPENAI_API_KEY` (preferred for LLM calls).
-- Optionally create an OpenRouter API key and set `OPENROUTER_API_KEY` as a fallback or alternative.
-- In your Vercel project settings, add the environment variables above plus `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and optionally `OPENAI_MODEL`, `OPENAI_API_BASE`, `OPENROUTER_MODEL`, or `OPENROUTER_API_BASE`.
+- Create an OpenRouter API key and set `OPENROUTER_API_KEY` (required for primary LLM calls).
+- In your Vercel project settings, add the environment variables above plus `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and optionally `OPENROUTER_MODEL` or `OPENROUTER_API_BASE`.
 - Connect your GitHub repo to Vercel and deploy the `main` branch. Build command: `npm run build` (or `bun build` if you use Bun), output directory: `dist` / default.
  
 

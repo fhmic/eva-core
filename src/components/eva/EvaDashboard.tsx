@@ -21,7 +21,13 @@ import { EvaCore } from "@/components/eva/EvaCore";
 import { SubAgentOrbit, type SubAgent } from "@/components/eva/SubAgentOrbit";
 import { Waveform } from "@/components/eva/Waveform";
 import { HoloPanel } from "@/components/eva/HoloPanel";
-import { NewsWidget, RadarWidget, SystemStatusWidget, WeatherWidget } from "@/components/eva/Widgets";
+import {
+  NewsWidget,
+  RadarWidget,
+  SystemHealthWidget,
+  SystemStatusWidget,
+  WeatherWidget,
+} from "@/components/eva/Widgets";
 import { MediaProvider, useMedia } from "@/components/eva/MediaContext";
 import { MediaPanel } from "@/components/eva/MediaPanel";
 import { MicrosoftProvider, useMicrosoft } from "@/components/eva/MicrosoftContext";
@@ -94,6 +100,26 @@ function Dashboard({ threadId }: { threadId: string }) {
   const memoryRef = useRef<Msg[]>([]);
   const workspaceRef = useRef<string>("");
   const bridgeRef = useRef<WorkspaceBridge | null>(null);
+  const voiceCtl = useRef<{ suspend: () => void; resume: () => void }>({
+    suspend: () => {},
+    resume: () => {},
+  });
+
+  /** Speak while the microphone is suspended so Eva never hears her own voice. */
+  const say = useCallback((text: string) => {
+    voiceCtl.current.suspend();
+    setSpeaking(true);
+    speak(text, () => {
+      setSpeaking(false);
+      voiceCtl.current.resume();
+    });
+  }, []);
+
+  const hush = useCallback(() => {
+    stopSpeaking();
+    setSpeaking(false);
+    voiceCtl.current.resume();
+  }, []);
 
   const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) => {
     setWorkspaceActive(!!dir);

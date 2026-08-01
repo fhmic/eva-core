@@ -47,6 +47,7 @@ import { speak, stopSpeaking, useVoice } from "@/components/eva/useVoice";
 import { WorkspacePanel, type WorkspaceBridge } from "@/components/eva/WorkspacePanel";
 import { parseToolCalls, runToolCalls, type EvaToolCall } from "@/lib/file-agent";
 import { evaChat } from "@/lib/eva.functions";
+import { downloadUrl } from "@/lib/download.functions";
 import { supabase } from "@/integrations/supabase/client";
 import {
   createThread,
@@ -82,6 +83,7 @@ function auditPath(call: EvaToolCall) {
 
 function Dashboard({ threadId }: { threadId: string }) {
   const chat = useServerFn(evaChat);
+  const download = useServerFn(downloadUrl);
   const media = useMedia();
   const ms = useMicrosoft();
   const navigate = useNavigate();
@@ -309,7 +311,12 @@ const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) 
         append("assistant", spoken);
 
         if (calls.length && bridge) {
-          const { results, tree } = await runToolCalls(bridge.dir, calls, bridge.requestConfirm);
+          const { results, tree } = await runToolCalls(
+            bridge.dir,
+            calls,
+            bridge.requestConfirm,
+            (url) => download({ data: { url } }),
+          );
           await bridge.refresh();
           for (let i = 0; i < results.length; i++) {
             const call = calls[i];

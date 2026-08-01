@@ -239,7 +239,7 @@ function Dashboard({ threadId }: { threadId: string }) {
     async (text: string, voiceReply: boolean) => {
       const clean = text.trim();
       if (!clean || thinking) return;
-      stopSpeaking();
+      hush();
 
       const intent = parseMediaIntent(clean);
       if (intent) {
@@ -333,7 +333,7 @@ function Dashboard({ threadId }: { threadId: string }) {
         setThinking(false);
       }
     },
-    [append, chat, logAudit, media, say, thinking],
+    [append, chat, hush, logAudit, media, say, thinking],
   );
 
   // Name the session after Felix's first directive.

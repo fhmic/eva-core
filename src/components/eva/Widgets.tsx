@@ -266,12 +266,7 @@ export function NewsWidget({ delay }: { delay?: number }) {
         {items.map((n, i) => (
           <li key={n.id} className="flex gap-2">
             <span className="label-hud pt-[3px]">{String(i + 1).padStart(2, "0")}</span>
-            <a
-              href={n.url}
-              target="_blank"
-              rel="noreferrer"
-              className="group block min-w-0 flex-1"
-            >
+            <a href={n.url} target="_blank" rel="noreferrer" className="group block min-w-0 flex-1">
               <p className="truncate text-foreground/90 transition group-hover:text-accent">
                 {n.title}
               </p>
@@ -342,8 +337,7 @@ export function SystemHealthWidget({ delay }: { delay?: number }) {
       frames.current = 0;
 
       const mem = (performance as any).memory as
-        | { usedJSHeapSize: number; jsHeapSizeLimit: number }
-        | undefined;
+        { usedJSHeapSize: number; jsHeapSizeLimit: number } | undefined;
       const ramUsedMb = mem ? Math.round(mem.usedJSHeapSize / 1048576) : 0;
       const ramTotalMb = mem ? Math.round(mem.jsHeapSizeLimit / 1048576) : 0;
 
@@ -358,8 +352,7 @@ export function SystemHealthWidget({ delay }: { delay?: number }) {
       }
 
       const conn = (navigator as any).connection as
-        | { downlink?: number; rtt?: number; effectiveType?: string }
-        | undefined;
+        { downlink?: number; rtt?: number; effectiveType?: string } | undefined;
 
       setH({
         cpu: Math.max(2, Math.min(100, Math.round((1 - fps / 60) * 100))),
@@ -433,9 +426,7 @@ export function SystemHealthWidget({ delay }: { delay?: number }) {
               <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-muted">
                 <div
                   className={`h-full rounded-full transition-all duration-700 ${
-                    hot
-                      ? "bg-destructive"
-                      : "bg-gradient-to-r from-violet via-primary to-accent"
+                    hot ? "bg-destructive" : "bg-gradient-to-r from-violet via-primary to-accent"
                   }`}
                   style={{ width: `${Math.max(2, r.pct)}%` }}
                 />

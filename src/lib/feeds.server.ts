@@ -180,8 +180,7 @@ const TOPICS: Record<string, string> = {
   technology:
     "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en-GB&gl=GB&ceid=GB:en",
   world: "https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-GB&gl=GB&ceid=GB:en",
-  science:
-    "https://news.google.com/rss/headlines/section/topic/SCIENCE?hl=en-GB&gl=GB&ceid=GB:en",
+  science: "https://news.google.com/rss/headlines/section/topic/SCIENCE?hl=en-GB&gl=GB&ceid=GB:en",
 };
 
 export async function fetchNews(topic: string, limit = 6): Promise<NewsItem[]> {

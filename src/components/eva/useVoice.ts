@@ -14,8 +14,7 @@ type Recognition = {
 
 function getRecognition(): Recognition | null {
   if (typeof window === "undefined") return null;
-  const Ctor =
-    (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition ?? null;
+  const Ctor = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition ?? null;
   if (!Ctor) return null;
   const r: Recognition = new Ctor();
   r.continuous = true;

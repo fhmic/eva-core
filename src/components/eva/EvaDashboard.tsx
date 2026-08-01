@@ -121,11 +121,15 @@ function Dashboard({ threadId }: { threadId: string }) {
     voiceCtl.current.resume();
   }, []);
 
-  const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) => {
+const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) => {
     setWorkspaceActive(!!dir);
+    const MAX_ENTRIES = 60;
+    const names = entries.slice(0, MAX_ENTRIES).map((e) => `${e.name}${e.kind === "directory" ? "/" : ""}`);
+    const listing =
+      names.join(", ") + (entries.length > MAX_ENTRIES ? `, +${entries.length - MAX_ENTRIES} more` : "");
     workspaceRef.current = dir
       ? `[Workspace context] Approved local folder: /${dir}. Contents: ${
-          entries.map((e) => `${e.name}${e.kind === "directory" ? "/" : ""}`).join(", ") || "empty"
+          listing || "empty"
         }. You have live disk tools (create_folder, write_file, move_file, delete_file, read_file, list_directory) bound to this root — emit eva-tool blocks to execute them.`
       : "";
   }, []);
@@ -270,6 +274,7 @@ function Dashboard({ threadId }: { threadId: string }) {
       setThinking(true);
       try {
         const payload = next.slice(-20);
+        const MAX_CTX_CHARS = 4000;
         const ctxParts = [workspaceRef.current].filter(Boolean);
         if (memoryRef.current.length) {
           ctxParts.unshift(
@@ -278,7 +283,10 @@ function Dashboard({ threadId }: { threadId: string }) {
               .join("\n")}`,
           );
         }
-        const ctx = ctxParts.join("\n\n");
+        let ctx = ctxParts.join("\n\n");
+        if (ctx.length > MAX_CTX_CHARS) {
+          ctx = `${ctx.slice(0, MAX_CTX_CHARS)}\n[context truncated]`;
+        }
         const withContext: Msg[] = ctx
           ? payload.map((m, i) =>
               i === payload.length - 1 ? { ...m, content: `${ctx}\n\n${m.content}` } : m,

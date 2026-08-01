@@ -260,10 +260,7 @@ function Dashboard({ threadId }: { threadId: string }) {
           reply = `Volume set to ${Math.round(intent.volume * 100)} percent.`;
         } else reply = media.mediaControl(intent.action);
         append("assistant", reply);
-        if (voiceReply) {
-          setSpeaking(true);
-          speak(reply, () => setSpeaking(false));
-        }
+        if (voiceReply) say(reply);
         return;
       }
 
@@ -296,10 +293,7 @@ function Dashboard({ threadId }: { threadId: string }) {
             (cleaned ? `${cleaned}\n\n` : "") +
             "I need disk access first, Felix — grant a folder in the Local Workspace panel and I'll execute that immediately.";
           append("assistant", notice);
-          if (voiceReply) {
-            setSpeaking(true);
-            speak(notice, () => setSpeaking(false));
-          }
+          if (voiceReply) say(notice);
           return;
         }
 
@@ -329,10 +323,7 @@ function Dashboard({ threadId }: { threadId: string }) {
           append("assistant", spoken);
         }
 
-        if (voiceReply) {
-          setSpeaking(true);
-          speak(spoken, () => setSpeaking(false));
-        }
+        if (voiceReply) say(spoken);
       } catch (err) {
         append(
           "assistant",
@@ -342,7 +333,7 @@ function Dashboard({ threadId }: { threadId: string }) {
         setThinking(false);
       }
     },
-    [append, chat, logAudit, media, thinking],
+    [append, chat, logAudit, media, say, thinking],
   );
 
   // Name the session after Felix's first directive.
@@ -358,11 +349,11 @@ function Dashboard({ threadId }: { threadId: string }) {
   const onCommand = useCallback((text: string) => void send(text, true), [send]);
   const onWake = useCallback(() => {
     append("assistant", GREETING);
-    setSpeaking(true);
-    speak(GREETING, () => setSpeaking(false));
-  }, [append]);
+    say(GREETING);
+  }, [append, say]);
 
   const voice = useVoice({ onCommand, onWake });
+  voiceCtl.current = { suspend: voice.suspend, resume: voice.resume };
 
   const coreState = thinking
     ? "thinking"
@@ -515,10 +506,7 @@ function Dashboard({ threadId }: { threadId: string }) {
                   </button>
                   {speaking && (
                     <button
-                      onClick={() => {
-                        stopSpeaking();
-                        setSpeaking(false);
-                      }}
+                      onClick={hush}
                       className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-muted-foreground transition hover:text-foreground"
                     >
                       <Square size={13} /> Interrupt

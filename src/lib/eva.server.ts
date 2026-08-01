@@ -55,24 +55,24 @@ async function callOpenAI(messages: EvaMessage[]) {
   throw new Error(`OpenAI request failed [${res.status}]: ${body}`);
 }
 
-async function callGemini(messages: EvaMessage[]) {
-  const key = process.env.GOOGLE_GEMINI_API_KEY;
-  const base = normalizeApiBase(process.env.GOOGLE_GEMINI_API_BASE, "https://gemini.googleapis.com");
-  const model = process.env.GOOGLE_GEMINI_MODEL || "models/text-bison-001";
-  // Gemini expects a generateMessage-style call. We send a lightweight payload.
-  const res = await fetch(`${base}/v1/${model}:generateMessage`, {
+async function callOpenRouter(messages: EvaMessage[]) {
+  const key = process.env.OPENROUTER_API_KEY;
+  const base = normalizeApiBase(process.env.OPENROUTER_API_BASE, "https://openrouter.ai/api");
+  const model = process.env.OPENROUTER_MODEL?.trim() || "gpt-4o-mini";
+  const res = await fetch(`${base}/v1/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      messages: [{ role: "system", content: EVA_SYSTEM_PROMPT }, ...messages].map((m) => ({ content: m.content, author: m.role })),
-    }),
+    body: JSON.stringify({ model, messages: [{ role: "system", content: EVA_SYSTEM_PROMPT }, ...messages] }),
   });
-  if (!res.ok) throw new Error(`Gemini request failed [${res.status}]`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`OpenRouter request failed [${res.status}]: ${body}`);
+  }
   const data = await res.json();
-  return data?.candidates?.[0]?.content || data?.output?.[0]?.content || "";
+  return data?.choices?.[0]?.message?.content ?? data?.output?.[0]?.content ?? "";
 }
 
-async function callGroq(messages: EvaMessage[]) {
+async function callGemini(messages: EvaMessage[]) {
   const key = process.env.GROQ_API_KEY;
   const base = process.env.GROQ_API_BASE || "https://api.groq.ai/v1";
   const model = process.env.GROQ_MODEL || "groq-alpha:latest";
@@ -108,9 +108,10 @@ async function callHuggingFace(messages: EvaMessage[]) {
 }
 
 export async function askEva(messages: EvaMessage[]): Promise<string> {
-  // provider preference order: OpenAI → Gemini → Groq → HuggingFace
+  // provider preference order: OpenAI → OpenRouter → Gemini → Groq → HuggingFace
   try {
     if (process.env.OPENAI_API_KEY) return await callOpenAI(messages);
+    if (process.env.OPENROUTER_API_KEY) return await callOpenRouter(messages);
     if (process.env.GOOGLE_GEMINI_API_KEY) return await callGemini(messages);
     if (process.env.GROQ_API_KEY) return await callGroq(messages);
     if (process.env.HUGGINGFACE_API_KEY) return await callHuggingFace(messages);

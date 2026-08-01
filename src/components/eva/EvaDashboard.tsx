@@ -21,7 +21,13 @@ import { EvaCore } from "@/components/eva/EvaCore";
 import { SubAgentOrbit, type SubAgent } from "@/components/eva/SubAgentOrbit";
 import { Waveform } from "@/components/eva/Waveform";
 import { HoloPanel } from "@/components/eva/HoloPanel";
-import { NewsWidget, RadarWidget, SystemStatusWidget, WeatherWidget } from "@/components/eva/Widgets";
+import {
+  NewsWidget,
+  RadarWidget,
+  SystemHealthWidget,
+  SystemStatusWidget,
+  WeatherWidget,
+} from "@/components/eva/Widgets";
 import { MediaProvider, useMedia } from "@/components/eva/MediaContext";
 import { MediaPanel } from "@/components/eva/MediaPanel";
 import { MicrosoftProvider, useMicrosoft } from "@/components/eva/MicrosoftContext";
@@ -94,6 +100,26 @@ function Dashboard({ threadId }: { threadId: string }) {
   const memoryRef = useRef<Msg[]>([]);
   const workspaceRef = useRef<string>("");
   const bridgeRef = useRef<WorkspaceBridge | null>(null);
+  const voiceCtl = useRef<{ suspend: () => void; resume: () => void }>({
+    suspend: () => {},
+    resume: () => {},
+  });
+
+  /** Speak while the microphone is suspended so Eva never hears her own voice. */
+  const say = useCallback((text: string) => {
+    voiceCtl.current.suspend();
+    setSpeaking(true);
+    speak(text, () => {
+      setSpeaking(false);
+      voiceCtl.current.resume();
+    });
+  }, []);
+
+  const hush = useCallback(() => {
+    stopSpeaking();
+    setSpeaking(false);
+    voiceCtl.current.resume();
+  }, []);
 
   const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) => {
     setWorkspaceActive(!!dir);
@@ -213,7 +239,7 @@ function Dashboard({ threadId }: { threadId: string }) {
     async (text: string, voiceReply: boolean) => {
       const clean = text.trim();
       if (!clean || thinking) return;
-      stopSpeaking();
+      hush();
 
       const intent = parseMediaIntent(clean);
       if (intent) {
@@ -234,10 +260,7 @@ function Dashboard({ threadId }: { threadId: string }) {
           reply = `Volume set to ${Math.round(intent.volume * 100)} percent.`;
         } else reply = media.mediaControl(intent.action);
         append("assistant", reply);
-        if (voiceReply) {
-          setSpeaking(true);
-          speak(reply, () => setSpeaking(false));
-        }
+        if (voiceReply) say(reply);
         return;
       }
 
@@ -270,10 +293,7 @@ function Dashboard({ threadId }: { threadId: string }) {
             (cleaned ? `${cleaned}\n\n` : "") +
             "I need disk access first, Felix — grant a folder in the Local Workspace panel and I'll execute that immediately.";
           append("assistant", notice);
-          if (voiceReply) {
-            setSpeaking(true);
-            speak(notice, () => setSpeaking(false));
-          }
+          if (voiceReply) say(notice);
           return;
         }
 
@@ -303,10 +323,7 @@ function Dashboard({ threadId }: { threadId: string }) {
           append("assistant", spoken);
         }
 
-        if (voiceReply) {
-          setSpeaking(true);
-          speak(spoken, () => setSpeaking(false));
-        }
+        if (voiceReply) say(spoken);
       } catch (err) {
         append(
           "assistant",
@@ -316,7 +333,7 @@ function Dashboard({ threadId }: { threadId: string }) {
         setThinking(false);
       }
     },
-    [append, chat, logAudit, media, thinking],
+    [append, chat, hush, logAudit, media, say, thinking],
   );
 
   // Name the session after Felix's first directive.
@@ -332,11 +349,11 @@ function Dashboard({ threadId }: { threadId: string }) {
   const onCommand = useCallback((text: string) => void send(text, true), [send]);
   const onWake = useCallback(() => {
     append("assistant", GREETING);
-    setSpeaking(true);
-    speak(GREETING, () => setSpeaking(false));
-  }, [append]);
+    say(GREETING);
+  }, [append, say]);
 
   const voice = useVoice({ onCommand, onWake });
+  voiceCtl.current = { suspend: voice.suspend, resume: voice.resume };
 
   const coreState = thinking
     ? "thinking"
@@ -468,15 +485,38 @@ function Dashboard({ threadId }: { threadId: string }) {
               <SubAgentOrbit agents={agents} />
               <EvaCore state={coreState} level={voice.level} size={300} />
               <div className="absolute inset-x-0 bottom-3 px-4">
-                <Waveform level={voice.level} active={voice.listening || speaking} />
-                <p className="mt-2 min-h-5 text-center text-xs text-muted-foreground">
-                  {voice.transcript ||
-                    (voice.supported
-                      ? voice.listening
-                        ? 'Say "Hello Eva" to activate'
-                        : "Voice interface offline"
-                      : "Voice recognition unavailable in this browser")}
-                </p>
+                <Waveform
+                  level={speaking ? 0.55 : voice.level}
+                  active={(voice.listening && !speaking) || speaking}
+                />
+                <div className="mt-2 min-h-10 text-center">
+                  <p className="label-hud text-[9px]">
+                    {speaking
+                      ? "Eva speaking · mic muted"
+                      : voice.awake
+                        ? "Live transcription · command mode"
+                        : voice.listening
+                          ? "Passive — awaiting wake word"
+                          : "Voice relay offline"}
+                  </p>
+                  <p
+                    className={`mt-1 text-sm ${
+                      voice.transcript ? "text-accent text-glow" : "text-muted-foreground"
+                    }`}
+                  >
+                    {voice.transcript ||
+                      (voice.supported
+                        ? speaking
+                          ? "…"
+                          : voice.awake
+                            ? "Listening for your directive, Felix"
+                            : voice.listening
+                              ? 'Say "Hello Eva" to activate'
+                              : "Voice interface offline"
+                        : "Voice recognition unavailable in this browser")}
+                  </p>
+                </div>
+
                 <div className="mt-3 flex justify-center gap-3">
                   <button
                     onClick={() => (voice.listening ? voice.stop() : void voice.start())}
@@ -489,10 +529,7 @@ function Dashboard({ threadId }: { threadId: string }) {
                   </button>
                   {speaking && (
                     <button
-                      onClick={() => {
-                        stopSpeaking();
-                        setSpeaking(false);
-                      }}
+                      onClick={hush}
                       className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-muted-foreground transition hover:text-foreground"
                     >
                       <Square size={13} /> Interrupt
@@ -564,7 +601,9 @@ function Dashboard({ threadId }: { threadId: string }) {
 
             <div className="grid gap-4 md:grid-cols-2">
               <SystemStatusWidget delay={260} connections={connections} task={task} />
+              <SystemHealthWidget delay={280} />
               <WeatherWidget delay={300} />
+              <NewsWidget delay={320} />
             </div>
           </div>
 
@@ -583,7 +622,6 @@ function Dashboard({ threadId }: { threadId: string }) {
               onCreate={() => void newSession()}
               onDelete={(id) => void removeSession(id)}
             />
-            <NewsWidget delay={320} />
           </div>
         </div>
       </div>

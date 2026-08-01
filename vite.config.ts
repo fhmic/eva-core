@@ -16,3 +16,11 @@ export default defineConfig({
   // Enable tsconfig path resolution natively in Vite
   resolve: { tsconfigPaths: true },
 });
+
+
+tanstackStart({
+  server: {
+    entry: "server",
+    preset: "vercel", // or "vercel-edge" if you want edge functions
+  },
+}),

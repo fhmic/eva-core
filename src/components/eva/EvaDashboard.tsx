@@ -601,7 +601,9 @@ function Dashboard({ threadId }: { threadId: string }) {
 
             <div className="grid gap-4 md:grid-cols-2">
               <SystemStatusWidget delay={260} connections={connections} task={task} />
+              <SystemHealthWidget delay={280} />
               <WeatherWidget delay={300} />
+              <NewsWidget delay={320} />
             </div>
           </div>
 
@@ -620,7 +622,6 @@ function Dashboard({ threadId }: { threadId: string }) {
               onCreate={() => void newSession()}
               onDelete={(id) => void removeSession(id)}
             />
-            <NewsWidget delay={320} />
           </div>
         </div>
       </div>

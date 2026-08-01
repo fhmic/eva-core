@@ -69,11 +69,13 @@ export function parseToolCalls(text: string): { calls: EvaToolCall[]; cleaned: s
 }
 
 export type ConfirmFn = (kind: "delete" | "overwrite", target: string) => Promise<boolean>;
+export type DownloadFn = (url: string) => Promise<{ base64: string; contentType: string; byteLength: number }>;
 
 export async function executeToolCall(
   dir: DirectoryHandleLike,
   call: EvaToolCall,
   confirm: ConfirmFn,
+  download?: DownloadFn,
 ): Promise<ToolResult> {
   try {
     switch (call.tool) {
@@ -151,6 +153,28 @@ export async function executeToolCall(
           }`,
         };
       }
+      case "download_url": {
+        if (!download) {
+          return { tool: call.tool, ok: false, message: "Download tool is not wired up." };
+        }
+        if ((await pathExists(dir, call.path)) === "file") {
+          if (!(await confirm("overwrite", call.path)))
+            return { tool: call.tool, ok: false, message: `Overwrite of ${call.path} declined.` };
+        }
+        const file = await download(call.url);
+        const bytes = Uint8Array.from(atob(file.base64), (c) => c.charCodeAt(0));
+        const blob = new Blob([bytes], { type: file.contentType });
+        await writeFilePath(dir, call.path, blob);
+        const verified = (await pathExists(dir, call.path)) === "file";
+        return {
+          tool: call.tool,
+          ok: verified,
+          verified,
+          message: verified
+            ? `Downloaded ${(file.byteLength / 1024).toFixed(0)}KB from ${call.url} to /${dir.name}/${call.path} and verified on disk.`
+            : `Download completed but /${call.path} could not be verified after write.`,
+        };
+      }
       default:
         return { tool: "unknown", ok: false, message: "Unsupported tool." };
     }
@@ -161,6 +185,17 @@ export async function executeToolCall(
       message: err instanceof Error ? err.message : "Operation failed.",
     };
   }
+}
+
+export async function runToolCalls(
+  dir: DirectoryHandleLike,
+  calls: EvaToolCall[],
+  confirm: ConfirmFn,
+  download?: DownloadFn,
+): Promise<{ results: ToolResult[]; tree: string[] }> {
+  const results: ToolResult[] = [];
+  for (const call of calls) results.push(await executeToolCall(dir, call, confirm, download));
+  return { results, tree: await listTree(dir) };
 }
 
 export async function runToolCalls(

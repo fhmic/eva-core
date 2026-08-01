@@ -6,11 +6,17 @@ function joinMessages(messages: EvaMessage[]) {
   return messages.map((m) => `${m.role}: ${m.content}`).join("\n");
 }
 
+function normalizeApiBase(base: string | undefined, fallback: string) {
+  if (!base) return fallback;
+  return base.trim().replace(/\/+$/, "").replace(/\/v1$/, "");
+}
+
 async function callOpenAI(messages: EvaMessage[]) {
   const openaiKey = process.env.OPENAI_API_KEY;
-  const openaiBase = process.env.OPENAI_API_BASE || "https://api.openai.com";
+  const openaiBase = normalizeApiBase(process.env.OPENAI_API_BASE, "https://api.openai.com");
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
-  const res = await fetch(`${openaiBase}/v1/chat/completions`, {
+  const url = `${openaiBase}/v1/chat/completions`;
+  const res = await fetch(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model, messages: [{ role: "system", content: EVA_SYSTEM_PROMPT }, ...messages] }),
@@ -19,6 +25,10 @@ async function callOpenAI(messages: EvaMessage[]) {
     const body = await res.text().catch(() => "");
     if (res.status === 429) throw new Error("Rate limit reached. Please retry shortly.");
     if (res.status === 402) throw new Error("AI credits exhausted for this workspace.");
+    if (res.status === 404)
+      throw new Error(
+        `OpenAI request failed 404: the API base looks incorrect. Set OPENAI_API_BASE to https://api.openai.com or leave it unset. Response: ${body}`,
+      );
     throw new Error(`OpenAI request failed [${res.status}]: ${body}`);
   }
   const data = await res.json();
@@ -27,7 +37,7 @@ async function callOpenAI(messages: EvaMessage[]) {
 
 async function callGemini(messages: EvaMessage[]) {
   const key = process.env.GOOGLE_GEMINI_API_KEY;
-  const base = process.env.GOOGLE_GEMINI_API_BASE || "https://gemini.googleapis.com";
+  const base = normalizeApiBase(process.env.GOOGLE_GEMINI_API_BASE, "https://gemini.googleapis.com");
   const model = process.env.GOOGLE_GEMINI_MODEL || "models/text-bison-001";
   // Gemini expects a generateMessage-style call. We send a lightweight payload.
   const res = await fetch(`${base}/v1/${model}:generateMessage`, {

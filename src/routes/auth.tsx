@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
+import { supabase } from "@/integrations/supabase/client";
 import { ParticleField } from "@/components/eva/ParticleField";
 
 export const Route = createFileRoute("/auth")({
@@ -69,15 +69,21 @@ function AuthPage() {
 
   const google = async () => {
     setError(null);
-    const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
-    });
-    if (result.error) {
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.origin },
+      } as any);
+      if (error) throw error;
+      // If Supabase returns a redirect url, follow it
+      if ((data as any)?.url) {
+        window.location.href = (data as any).url;
+        return;
+      }
+      void navigate({ to: "/" });
+    } catch (err) {
       setError("Google sign-in failed. Please try again.");
-      return;
     }
-    if (result.redirected) return;
-    void navigate({ to: "/" });
   };
 
   return (

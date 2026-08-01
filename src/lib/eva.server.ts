@@ -3,17 +3,20 @@ import { EVA_SYSTEM_PROMPT } from "./eva-prompt";
 export type EvaMessage = { role: "user" | "assistant"; content: string };
 
 export async function askEva(messages: EvaMessage[]): Promise<string> {
-  const apiKey = process.env.LOVABLE_API_KEY;
-  if (!apiKey) throw new Error("Eva intelligence core is offline: missing API key.");
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey) throw new Error("Eva intelligence core is offline: set OPENAI_API_KEY in your environment.");
 
-  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const openaiBase = process.env.OPENAI_API_BASE || "https://api.openai.com";
+  const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+
+  const response = await fetch(`${openaiBase}/v1/chat/completions`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${openaiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "google/gemini-3.6-flash",
+      model,
       messages: [{ role: "system", content: EVA_SYSTEM_PROMPT }, ...messages],
     }),
   });

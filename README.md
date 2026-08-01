@@ -1,5 +1,17 @@
 # Eva: Executive Virtual Assistant
 
+## Migration: Vercel + Personal Supabase
+
+This repository can be deployed to Vercel with your own Supabase project. High-level steps:
+
+- Create a Supabase project and copy `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`.
+- Create an OpenAI API key and set `OPENAI_API_KEY` (required for LLM calls).
+- In your Vercel project settings, add the environment variables above plus `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and optionally `OPENAI_MODEL` or `OPENAI_API_BASE`.
+- Connect your GitHub repo to Vercel and deploy the `main` branch. Build command: `npm run build` (or `bun build` if you use Bun), output directory: `dist` / default.
+ 
+
+See the bottom of this README for a step-by-step migration checklist.
+
 Holographic Interface Prompt (For Cursor, Loveable, Bolt or Replit)
 Create a futuristic AI assistant dashboard called EVA.
 
@@ -411,17 +423,9 @@ Behaviour:
 
 Ability to hold intellectual conversation, access and create folders, and various file type, such as pdf, ms word, powerpoint, md, text, audio, voice, etc and analyse them comprehensively. It should be able to open gmail, @connector:google_calendar:"Google Calendar"  schedule meetings, write notes with excellent data analytics skill
 
-This project was built with [Lovable](https://lovable.dev).
+This project was migrated away from a third-party platform and is configured to deploy on Vercel.
 
-**Live app**: https://eva-core.lovable.app
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/0296bc40-580b-4ef9-a75b-bffa9e38c620).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
+**Deployment (Vercel)**: Connect this repository to Vercel and set the environment variables described below. Use Vite build (`npm run build`) and the generated `dist` output.
 
 ## Development
 

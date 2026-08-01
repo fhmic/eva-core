@@ -14,18 +14,37 @@ function normalizeApiBase(base: string | undefined, fallback: string) {
 async function callOpenRouter(messages: EvaMessage[]) {
   const key = process.env.OPENROUTER_API_KEY;
   const base = normalizeApiBase(process.env.OPENROUTER_API_BASE, "https://openrouter.ai/api");
-  const model = process.env.OPENROUTER_MODEL?.trim() || "gpt-4o-mini";
-  const res = await fetch(`${base}/v1/chat/completions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages: [{ role: "system", content: EVA_SYSTEM_PROMPT }, ...messages] }),
-  });
-  if (!res.ok) {
+  const defaultModel = process.env.OPENROUTER_MODEL?.trim() || "gpt-4o-mini";
+  const models = Array.from(new Set([defaultModel, "gpt-4o-mini", "gpt-4o"]));
+  let lastError: Error | null = null;
+
+  for (const model of models) {
+    const res = await fetch(`${base}/v1/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages: [{ role: "system", content: EVA_SYSTEM_PROMPT }, ...messages] }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return data?.choices?.[0]?.message?.content ?? data?.output?.[0]?.content ?? "";
+    }
+
     const body = await res.text().catch(() => "");
-    throw new Error(`OpenRouter request failed [${res.status}]: ${body}`);
+    const text = body.toString();
+    const isModelMissing =
+      res.status === 404 ||
+      /NOT_FOUND|not_found|model.*not found|unknown model/i.test(text);
+    const error = new Error(`OpenRouter request failed [${res.status}] (${model}): ${text}`);
+
+    if (!isModelMissing) {
+      throw error;
+    }
+
+    lastError = error;
   }
-  const data = await res.json();
-  return data?.choices?.[0]?.message?.content ?? data?.output?.[0]?.content ?? "";
+
+  throw lastError ?? new Error("OpenRouter request failed without response body");
 }
 
 async function callGemini(messages: EvaMessage[]) {

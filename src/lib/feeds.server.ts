@@ -59,7 +59,7 @@ const WEATHER_TEXT: Record<number, string> = {
   85: "Snow showers",
   86: "Snow showers",
   95: "Thunderstorm",
-  96: "Thunderstorm с hail",
+  96: "Thunderstorm with hail",
   99: "Severe thunderstorm",
 };
 

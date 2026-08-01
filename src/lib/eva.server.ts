@@ -14,25 +14,45 @@ function normalizeApiBase(base: string | undefined, fallback: string) {
 async function callOpenAI(messages: EvaMessage[]) {
   const openaiKey = process.env.OPENAI_API_KEY;
   const openaiBase = normalizeApiBase(process.env.OPENAI_API_BASE, "https://api.openai.com");
-  const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
-  const url = `${openaiBase}/v1/chat/completions`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages: [{ role: "system", content: EVA_SYSTEM_PROMPT }, ...messages] }),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    if (res.status === 429) throw new Error("Rate limit reached. Please retry shortly.");
-    if (res.status === 402) throw new Error("AI credits exhausted for this workspace.");
-    if (res.status === 404)
-      throw new Error(
-        `OpenAI request failed 404: the API base looks incorrect. Set OPENAI_API_BASE to https://api.openai.com or leave it unset. Response: ${body}`,
-      );
-    throw new Error(`OpenAI request failed [${res.status}]: ${body}`);
+  const model = process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
+  const fallbackModel = "gpt-3.5-turbo";
+  const useFallback = !process.env.OPENAI_MODEL;
+
+  const makeRequest = async (modelName: string) => {
+    const url = `${openaiBase}/v1/chat/completions`;
+    return await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: modelName, messages: [{ role: "system", content: EVA_SYSTEM_PROMPT }, ...messages] }),
+    });
+  };
+
+  const res = await makeRequest(model);
+  if (res.ok) {
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content ?? "";
   }
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content ?? "";
+
+  const body = await res.text().catch(() => "");
+  if (res.status === 429) throw new Error("Rate limit reached. Please retry shortly.");
+  if (res.status === 402) throw new Error("AI credits exhausted for this workspace.");
+  if (res.status === 404 && useFallback && model === "gpt-4o-mini") {
+    const retry = await makeRequest(fallbackModel);
+    if (retry.ok) {
+      const data = await retry.json();
+      return data.choices?.[0]?.message?.content ?? "";
+    }
+    const retryBody = await retry.text().catch(() => "");
+    throw new Error(
+      `OpenAI fallback failed for ${fallbackModel} [${retry.status}]: ${retryBody}`,
+    );
+  }
+
+  if (res.status === 404)
+    throw new Error(
+      `OpenAI request failed 404: model or endpoint not found. Confirm OPENAI_API_BASE is https://api.openai.com and OPENAI_MODEL is valid. Response: ${body}`,
+    );
+  throw new Error(`OpenAI request failed [${res.status}]: ${body}`);
 }
 
 async function callGemini(messages: EvaMessage[]) {

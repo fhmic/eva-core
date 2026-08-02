@@ -11,7 +11,13 @@ export default defineConfig({
     tanstackStart({
       server: { entry: "server" },
     }),
-    nitro({ preset: "vercel" }),
+    nitro({
+      // Defaults to Vercel (your current production deploy). Set NITRO_PRESET=cloudflare_module
+      // in your build environment to build for Cloudflare Workers instead.
+      preset: (process.env.NITRO_PRESET as "vercel" | "cloudflare_module" | undefined) || "vercel",
+      compatibilityDate: "2024-09-19",
+      cloudflare: { deployConfig: true, nodeCompat: true },
+    }),
     tailwind(),
     react(),
   ],

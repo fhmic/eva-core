@@ -1,12 +1,14 @@
 /**
  * Server-side URL fetcher for Eva's download_url tool.
  *
- * Vercel Functions have a hard 4.5MB request/response body limit (infra-level,
- * not configurable). Since this returns JSON with base64 content, the real
- * ceiling is ~3MB raw before base64 inflation — enforced below.
+ * On Vercel this was capped at 3MB because Vercel Functions have a hard,
+ * non-configurable 4.5MB request/response body limit. Cloudflare Workers
+ * have no such response-size ceiling (just a 128MB memory limit per
+ * invocation), so the cap is raised to 20MB — plenty for real audio files,
+ * PDFs, and datasets, with comfortable headroom under Workers' memory limit.
  */
 
-const MAX_BYTES = 3 * 1024 * 1024; // 3MB raw, keeps the base64 response under Vercel's cap
+const MAX_BYTES = 20 * 1024 * 1024; // 20MB — see note above on why this is safe on Cloudflare
 
 const BLOCKED_EXTENSIONS = new Set([
   "exe", "msi", "bat", "cmd", "com", "scr", "ps1", "sh", "bash",

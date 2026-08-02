@@ -54,8 +54,8 @@ function normalizeApiBase(base: string | undefined, fallback: string) {
 async function callOpenRouter(messages: EvaMessage[]) {
   const key = process.env.OPENROUTER_API_KEY;
   const base = normalizeApiBase(process.env.OPENROUTER_API_BASE, "https://openrouter.ai/api");
-  const defaultModel = process.env.OPENROUTER_MODEL?.trim() || "gpt-4o-mini";
-  const models = Array.from(new Set([defaultModel, "gpt-4o-mini", "gpt-4o"]));
+  const defaultModel = process.env.OPENROUTER_MODEL?.trim() || "openai/gpt-4o-mini";
+  const models = Array.from(new Set([defaultModel, "openai/gpt-4o-mini", "openai/gpt-4o"]));
   let lastError: Error | null = null;
 
   for (const model of models) {
@@ -85,6 +85,26 @@ async function callOpenRouter(messages: EvaMessage[]) {
   }
 
   throw lastError ?? new Error("OpenRouter request failed without response body");
+}
+
+async function callNvidia(messages: EvaMessage[]) {
+  const key = process.env.NVIDIA_API_KEY;
+  const base = normalizeApiBase(process.env.NVIDIA_API_BASE, "https://integrate.api.nvidia.com");
+  const model = process.env.NVIDIA_MODEL?.trim() || "meta/llama-3.3-70b-instruct";
+
+  const res = await fetch(`${base}/v1/chat/completions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model, messages: [{ role: "system", content: EVA_SYSTEM_PROMPT }, ...messages] }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`NVIDIA NIM request failed [${res.status}] (${model}): ${body}`);
+  }
+
+  const data = await res.json();
+  return data?.choices?.[0]?.message?.content ?? "";
 }
 
 async function callGemini(messages: EvaMessage[]) {
@@ -142,14 +162,15 @@ async function callHuggingFace(messages: EvaMessage[]) {
 }
 
 async function callProvider(messages: EvaMessage[]): Promise<string> {
-  // provider preference order: OpenRouter → Gemini → Groq → HuggingFace
+  // provider preference order: OpenRouter → NVIDIA NIM → Gemini → Groq → HuggingFace
   if (process.env.OPENROUTER_API_KEY) return await callOpenRouter(messages);
+  if (process.env.NVIDIA_API_KEY) return await callNvidia(messages);
   if (process.env.GOOGLE_GEMINI_API_KEY) return await callGemini(messages);
   if (process.env.GROQ_API_KEY) return await callGroq(messages);
   if (process.env.HUGGINGFACE_API_KEY) return await callHuggingFace(messages);
 
   throw new Error(
-    "Eva intelligence core is offline: set OPENROUTER_API_KEY or a fallback provider (GOOGLE_GEMINI_API_KEY, GROQ_API_KEY, or HUGGINGFACE_API_KEY) in your environment.",
+    "Eva intelligence core is offline: set OPENROUTER_API_KEY or a fallback provider (NVIDIA_API_KEY, GOOGLE_GEMINI_API_KEY, GROQ_API_KEY, or HUGGINGFACE_API_KEY) in your environment.",
   );
 }
 

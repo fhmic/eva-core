@@ -131,6 +131,33 @@ export type Database = {
       [_ in never]: never
     }
   }
+va_progress: {
+        Row: {
+          current_day: number
+          last_session_at: string | null
+          profile: Json
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          current_day?: number
+          last_session_at?: string | null
+          profile?: Json
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          current_day?: number
+          last_session_at?: string | null
+          profile?: Json
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
 }
 
 type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">

@@ -17,7 +17,12 @@ function getRecognition(): Recognition | null {
   const Ctor = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition ?? null;
   if (!Ctor) return null;
   const r: Recognition = new Ctor();
-  r.continuous = true;
+  // continuous:true has a long-standing WebKit bug (iOS Safari/Chrome, and some
+  // Android builds) where the mic stays active but never fires results. Using
+  // continuous:false with a fast auto-restart-on-end loop (see start()/onend
+  // below) gives the same "always listening" experience without that failure
+  // mode, and works identically on desktop.
+  r.continuous = false;
   r.interimResults = true;
   r.lang = "en-US";
   return r;
@@ -54,7 +59,8 @@ export function useVoice({
   const suspendedRef = useRef(false);
   const guardUntil = useRef(0);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const audioCleanup = useRef<() => void>(() => {});
+  const levelTarget = useRef(0);
+  const levelFrame = useRef<number | null>(null);
 
   useEffect(() => {
     setSupported(!!getRecognition());
@@ -69,38 +75,34 @@ export function useVoice({
     }, 30000);
   }, []);
 
-  const startMeter = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  /**
+   * Synthetic level meter driven by recognition activity rather than a second
+   * getUserMedia() stream. Two independent mic consumers (SpeechRecognition's
+   * own internal capture + a raw analyser stream) is a known source of mic
+   * contention on mobile — this avoids that entirely while still giving the
+   * waveform a natural-looking reactive pulse.
+   */
+  const startMeterLoop = useCallback(() => {
+    const tick = () => {
+      setLevel((prev) => {
+        const next = prev + (levelTarget.current - prev) * 0.2;
+        return Math.abs(next - prev) < 0.002 && levelTarget.current < 0.01 ? 0 : next;
       });
-      const ctx = new AudioContext();
-      const src = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      src.connect(analyser);
-      const data = new Uint8Array(analyser.frequencyBinCount);
-      let frame = 0;
-      const tick = () => {
-        analyser.getByteTimeDomainData(data);
-        let sum = 0;
-        for (let i = 0; i < data.length; i++) {
-          const v = (data[i] - 128) / 128;
-          sum += v * v;
-        }
-        setLevel(Math.min(1, Math.sqrt(sum / data.length) * 4));
-        frame = requestAnimationFrame(tick);
-      };
-      tick();
-      audioCleanup.current = () => {
-        cancelAnimationFrame(frame);
-        stream.getTracks().forEach((t) => t.stop());
-        void ctx.close();
-        setLevel(0);
-      };
-    } catch {
-      /* mic metering is optional */
-    }
+      levelTarget.current *= 0.88;
+      levelFrame.current = requestAnimationFrame(tick);
+    };
+    if (levelFrame.current == null) levelFrame.current = requestAnimationFrame(tick);
+  }, []);
+
+  const stopMeterLoop = useCallback(() => {
+    if (levelFrame.current != null) cancelAnimationFrame(levelFrame.current);
+    levelFrame.current = null;
+    levelTarget.current = 0;
+    setLevel(0);
+  }, []);
+
+  const pulseLevel = useCallback((text: string) => {
+    levelTarget.current = Math.min(1, 0.35 + text.length * 0.02);
   }, []);
 
   const stop = useCallback(() => {
@@ -111,10 +113,9 @@ export function useVoice({
     suspendedRef.current = false;
     recRef.current?.stop();
     recRef.current = null;
-    audioCleanup.current();
-    audioCleanup.current = () => {};
+    stopMeterLoop();
     setTranscript("");
-  }, []);
+  }, [stopMeterLoop]);
 
   const start = useCallback(async () => {
     if (listeningRef.current) return;
@@ -123,7 +124,7 @@ export function useVoice({
     recRef.current = rec;
     listeningRef.current = true;
     setListening(true);
-    await startMeter();
+    startMeterLoop();
 
     rec.onresult = (e: any) => {
       if (suspendedRef.current || Date.now() < guardUntil.current) return;
@@ -131,6 +132,7 @@ export function useVoice({
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i];
         const text = res[0].transcript as string;
+        pulseLevel(text);
         if (res.isFinal) {
           const clean = text.trim();
           if (!clean || SELF_ECHO.test(clean)) continue;
@@ -169,7 +171,7 @@ export function useVoice({
     } catch {
       /* ignore */
     }
-  }, [armIdle, onCommand, onWake, startMeter]);
+  }, [armIdle, onCommand, onWake, pulseLevel, startMeterLoop]);
 
   /** Halt recognition while Eva speaks so the mic never hears her reply. */
   const suspend = useCallback(() => {

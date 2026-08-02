@@ -132,3 +132,53 @@ export async function recentMemory(excludeThreadId: string, limit = 14) {
     .reverse()
     .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 }
+
+export type VaProgress = {
+  currentDay: number;
+  status: "not_started" | "in_progress" | "completed";
+  profile: Record<string, string>;
+};
+
+/** Reads VA progress, creating a fresh day-1 row on first ever session. */
+export async function getVaProgress(): Promise<VaProgress> {
+  const userId = await currentUserId();
+  const empty: VaProgress = { currentDay: 1, status: "not_started", profile: {} };
+  if (!userId) return empty;
+
+  const { data, error } = await supabase
+    .from("va_progress")
+    .select("current_day,status,profile")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error || !data) return empty;
+  return {
+    currentDay: data.current_day,
+    status: data.status as VaProgress["status"],
+    profile: (data.profile as Record<string, string>) ?? {},
+  };
+}
+
+/** Upserts a partial VA progress patch (day, status, and/or profile fields). */
+export async function upsertVaProgress(patch: {
+  currentDay?: number;
+  status?: VaProgress["status"];
+  profile?: Record<string, string>;
+}): Promise<void> {
+  const userId = await currentUserId();
+  if (!userId) return;
+
+  const existing = await getVaProgress();
+  const mergedProfile = { ...existing.profile, ...(patch.profile ?? {}) };
+
+  const { error } = await supabase.from("va_progress").upsert(
+    {
+      user_id: userId,
+      current_day: patch.currentDay ?? existing.currentDay,
+      status: patch.status ?? existing.status,
+      profile: mergedProfile,
+      last_session_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id" },
+  );
+  if (error) console.error("[eva] VA progress persistence failed:", error.message);
+}

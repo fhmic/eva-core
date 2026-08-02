@@ -42,18 +42,46 @@ async function runToolCall(call: EvaToolCall): Promise<string> {
   return "Unknown tool.";
 }
 
-function joinMessages(messages: EvaMessage[]) {
-  return messages.map((m) => `${m.role}: ${m.content}`).join("\n");
-}
-
 function normalizeApiBase(base: string | undefined, fallback: string) {
   if (!base) return fallback;
   return base.trim().replace(/\/+$/, "").replace(/\/v1$/, "");
 }
 
+const withSystemPrompt = (messages: EvaMessage[]) => [
+  { role: "system" as const, content: EVA_SYSTEM_PROMPT },
+  ...messages,
+];
+
+/**
+ * Shared OpenAI-compatible chat completions caller. OpenRouter, NVIDIA NIM,
+ * Groq, and Hugging Face's router all speak this exact shape — verified
+ * against each provider's current docs (base URLs and models below).
+ */
+async function callOpenAICompatible(
+  label: string,
+  base: string,
+  key: string | undefined,
+  model: string,
+): Promise<(messages: EvaMessage[]) => Promise<string>> {
+  return async (messages: EvaMessage[]) => {
+    const res = await fetch(`${base}/v1/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages: withSystemPrompt(messages) }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`${label} request failed [${res.status}] (${model}): ${body}`);
+    }
+    const data = await res.json();
+    return data?.choices?.[0]?.message?.content ?? "";
+  };
+}
+
 async function callOpenRouter(messages: EvaMessage[]) {
   const key = process.env.OPENROUTER_API_KEY;
   const base = normalizeApiBase(process.env.OPENROUTER_API_BASE, "https://openrouter.ai/api");
+  // OpenRouter requires the "provider/model" format — bare names like "gpt-4o-mini" 404.
   const defaultModel = process.env.OPENROUTER_MODEL?.trim() || "openai/gpt-4o-mini";
   const models = Array.from(new Set([defaultModel, "openai/gpt-4o-mini", "openai/gpt-4o"]));
   let lastError: Error | null = null;
@@ -62,25 +90,20 @@ async function callOpenRouter(messages: EvaMessage[]) {
     const res = await fetch(`${base}/v1/chat/completions`, {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages: [{ role: "system", content: EVA_SYSTEM_PROMPT }, ...messages] }),
+      body: JSON.stringify({ model, messages: withSystemPrompt(messages) }),
     });
 
     if (res.ok) {
       const data = await res.json();
-      return data?.choices?.[0]?.message?.content ?? data?.output?.[0]?.content ?? "";
+      return data?.choices?.[0]?.message?.content ?? "";
     }
 
-    const body = await res.text().catch(() => "");
-    const text = body.toString();
+    const text = await res.text().catch(() => "");
     const isModelMissing =
-      res.status === 404 ||
-      /NOT_FOUND|not_found|model.*not found|unknown model/i.test(text);
+      res.status === 404 || /NOT_FOUND|not_found|model.*not found|unknown model/i.test(text);
     const error = new Error(`OpenRouter request failed [${res.status}] (${model}): ${text}`);
 
-    if (!isModelMissing) {
-      throw error;
-    }
-
+    if (!isModelMissing) throw error;
     lastError = error;
   }
 
@@ -88,89 +111,83 @@ async function callOpenRouter(messages: EvaMessage[]) {
 }
 
 async function callNvidia(messages: EvaMessage[]) {
-  const key = process.env.NVIDIA_API_KEY;
-  const base = normalizeApiBase(process.env.NVIDIA_API_BASE, "https://integrate.api.nvidia.com");
-  const model = process.env.NVIDIA_MODEL?.trim() || "meta/llama-3.3-70b-instruct";
+  const call = await callOpenAICompatible(
+    "NVIDIA NIM",
+    normalizeApiBase(process.env.NVIDIA_API_BASE, "https://integrate.api.nvidia.com"),
+    process.env.NVIDIA_API_KEY,
+    process.env.NVIDIA_MODEL?.trim() || "meta/llama-3.3-70b-instruct",
+  );
+  return call(messages);
+}
 
-  const res = await fetch(`${base}/v1/chat/completions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages: [{ role: "system", content: EVA_SYSTEM_PROMPT }, ...messages] }),
-  });
+async function callGroq(messages: EvaMessage[]) {
+  // Real base is api.groq.com/openai (not api.groq.ai), OpenAI-compatible shape.
+  const call = await callOpenAICompatible(
+    "Groq",
+    normalizeApiBase(process.env.GROQ_API_BASE, "https://api.groq.com/openai"),
+    process.env.GROQ_API_KEY,
+    process.env.GROQ_MODEL?.trim() || "llama-3.1-8b-instant",
+  );
+  return call(messages);
+}
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`NVIDIA NIM request failed [${res.status}] (${model}): ${body}`);
-  }
-
-  const data = await res.json();
-  return data?.choices?.[0]?.message?.content ?? "";
+async function callHuggingFace(messages: EvaMessage[]) {
+  // HF moved chat models to the router (router.huggingface.co), OpenAI-compatible.
+  // The old api-inference.huggingface.co/models/{id} raw endpoint is legacy.
+  const call = await callOpenAICompatible(
+    "HuggingFace",
+    normalizeApiBase(process.env.HUGGINGFACE_API_BASE, "https://router.huggingface.co"),
+    process.env.HUGGINGFACE_API_KEY,
+    process.env.HUGGINGFACE_MODEL?.trim() || "meta-llama/Llama-3.1-8B-Instruct",
+  );
+  return call(messages);
 }
 
 async function callGemini(messages: EvaMessage[]) {
   const key = process.env.GOOGLE_GEMINI_API_KEY;
-  const base = normalizeApiBase(process.env.GOOGLE_GEMINI_API_BASE, "https://gemini.googleapis.com");
-  const model = process.env.GOOGLE_GEMINI_MODEL || "models/text-bison-001";
-  const res = await fetch(`${base}/v1/${model}:generateMessage`, {
+  const base = normalizeApiBase(
+    process.env.GOOGLE_GEMINI_API_BASE,
+    "https://generativelanguage.googleapis.com",
+  );
+  const model = process.env.GOOGLE_GEMINI_MODEL?.trim() || "gemini-2.0-flash";
+
+  // Gemini's contents array only accepts "user"/"model" roles — the system
+  // prompt goes in a separate systemInstruction field, and any mid-conversation
+  // "system" messages (from our tool loop) get folded into "user" turns.
+  const contents = messages.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
+  }));
+
+  const res = await fetch(`${base}/v1beta/models/${model}:generateContent`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    headers: { "x-goog-api-key": key ?? "", "Content-Type": "application/json" },
     body: JSON.stringify({
-      messages: [{ role: "system", content: EVA_SYSTEM_PROMPT }, ...messages].map((m) => ({ content: m.content, author: m.role })),
+      systemInstruction: { parts: [{ text: EVA_SYSTEM_PROMPT }] },
+      contents,
     }),
   });
-  if (!res.ok) throw new Error(`Gemini request failed [${res.status}]`);
-  const data = await res.json();
-  return data?.candidates?.[0]?.content || data?.output?.[0]?.content || "";
-}
 
-async function callGroq(messages: EvaMessage[]) {
-  const key = process.env.GROQ_API_KEY;
-  const base = process.env.GROQ_API_BASE || "https://api.groq.ai/v1";
-  const model = process.env.GROQ_MODEL || "groq-alpha:latest";
-  const prompt = `${EVA_SYSTEM_PROMPT}\n${joinMessages(messages)}`;
-  const res = await fetch(`${base}/models/${model}/predict`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt }),
-  });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`Groq request failed [${res.status}]: ${body}`);
+    throw new Error(`Gemini request failed [${res.status}] (${model}): ${body}`);
   }
-  const data = await res.json();
-  return data?.output?.[0]?.content ?? data?.result ?? "";
-}
 
-async function callHuggingFace(messages: EvaMessage[]) {
-  const key = process.env.HUGGINGFACE_API_KEY;
-  const base = process.env.HUGGINGFACE_API_BASE || "https://api-inference.huggingface.co";
-  const model = process.env.HUGGINGFACE_MODEL || "gpt2";
-  const prompt = `${EVA_SYSTEM_PROMPT}\n${joinMessages(messages)}`;
-  const res = await fetch(`${base}/models/${model}`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ inputs: prompt }),
-  });
-  if (!res.ok) throw new Error(`HuggingFace request failed [${res.status}]`);
   const data = await res.json();
-  // HF can return text or an array of tokens/objects
-  if (typeof data === "string") return data;
-  if (Array.isArray(data) && data[0]?.generated_text) return data[0].generated_text;
-  if (data?.generated_text) return data.generated_text;
-  if (data?.error) throw new Error(`HuggingFace: ${data.error}`);
-  return "";
+  const parts = data?.candidates?.[0]?.content?.parts ?? [];
+  return parts.map((p: { text?: string }) => p.text ?? "").join("");
 }
 
 async function callProvider(messages: EvaMessage[]): Promise<string> {
-  // provider preference order: OpenRouter → NVIDIA NIM → Gemini → Groq → HuggingFace
+  // provider preference order: OpenRouter → NVIDIA NIM → Groq → Gemini → HuggingFace
   if (process.env.OPENROUTER_API_KEY) return await callOpenRouter(messages);
   if (process.env.NVIDIA_API_KEY) return await callNvidia(messages);
-  if (process.env.GOOGLE_GEMINI_API_KEY) return await callGemini(messages);
   if (process.env.GROQ_API_KEY) return await callGroq(messages);
+  if (process.env.GOOGLE_GEMINI_API_KEY) return await callGemini(messages);
   if (process.env.HUGGINGFACE_API_KEY) return await callHuggingFace(messages);
 
   throw new Error(
-    "Eva intelligence core is offline: set OPENROUTER_API_KEY or a fallback provider (NVIDIA_API_KEY, GOOGLE_GEMINI_API_KEY, GROQ_API_KEY, or HUGGINGFACE_API_KEY) in your environment.",
+    "Eva intelligence core is offline: set OPENROUTER_API_KEY or a fallback provider (NVIDIA_API_KEY, GROQ_API_KEY, GOOGLE_GEMINI_API_KEY, or HUGGINGFACE_API_KEY) in your environment.",
   );
 }
 

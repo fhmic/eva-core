@@ -188,13 +188,13 @@ export async function executeToolCall(
 }
 
 
-
 export async function runToolCalls(
   dir: DirectoryHandleLike,
   calls: EvaToolCall[],
   confirm: ConfirmFn,
+  download?: DownloadFn,
 ): Promise<{ results: ToolResult[]; tree: string[] }> {
   const results: ToolResult[] = [];
-  for (const call of calls) results.push(await executeToolCall(dir, call, confirm));
+  for (const call of calls) results.push(await executeToolCall(dir, call, confirm, download));
   return { results, tree: await listTree(dir) };
 }

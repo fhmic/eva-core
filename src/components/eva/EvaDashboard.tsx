@@ -478,10 +478,9 @@ const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) 
             </button>
           </div>
         </header>
-
-        <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)_320px]">
+<div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)_240px] xl:grid-cols-[320px_minmax(0,1fr)_320px]">
           {/* Left rail */}
-          <div className="space-y-4">
+          <div className="order-2 space-y-4 lg:order-none">
             <WorkspacePanel
               delay={40}
               bridgeRef={bridgeRef}
@@ -495,10 +494,12 @@ const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) 
           </div>
 
           {/* Command centre */}
-          <div className="space-y-4">
-            <div className="glass-panel relative flex min-h-[440px] items-center justify-center overflow-hidden p-4">
-              <SubAgentOrbit agents={agents} />
-              <EvaCore state={coreState} level={voice.level} size={300} />
+          <div className="order-1 space-y-4 lg:order-none">
+            <div className="glass-panel relative flex min-h-[280px] items-center justify-center overflow-hidden p-4 sm:min-h-[360px] xl:min-h-[440px]">
+              <div className="absolute inset-0 grid scale-[0.65] place-items-center origin-center sm:scale-[0.85] xl:scale-100">
+                <SubAgentOrbit agents={agents} />
+                <EvaCore state={coreState} level={voice.level} size={300} />
+              </div>
               <div className="absolute inset-x-0 bottom-3 px-4">
                 <Waveform
                   level={speaking ? 0.55 : voice.level}
@@ -536,7 +537,7 @@ const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) 
                   <button
                     onClick={() => (voice.listening ? voice.stop() : void voice.start())}
                     disabled={!voice.supported}
-                    className="flex items-center gap-2 rounded-full border border-accent/50 bg-secondary/70 px-5 py-2 text-sm text-accent transition hover:scale-[1.03] disabled:opacity-40"
+                    className="flex min-h-11 items-center gap-2 rounded-full border border-accent/50 bg-secondary/70 px-5 py-2 text-sm text-accent transition hover:scale-[1.03] disabled:opacity-40"
                     style={{ boxShadow: "var(--shadow-glow)" }}
                   >
                     {voice.listening ? <MicOff size={15} /> : <Mic size={15} />}
@@ -545,7 +546,7 @@ const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) 
                   {speaking && (
                     <button
                       onClick={hush}
-                      className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-muted-foreground transition hover:text-foreground"
+                      className="flex min-h-11 items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-muted-foreground transition hover:text-foreground"
                     >
                       <Square size={13} /> Interrupt
                     </button>
@@ -562,12 +563,12 @@ const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) 
             >
               <div
                 ref={logRef}
-                className="max-h-[320px] min-h-[200px] space-y-3 overflow-y-auto pr-1"
+                className="max-h-[50vh] min-h-[200px] space-y-3 overflow-y-auto pr-1 sm:max-h-[320px]"
               >
                 {messages.map((m, i) => (
                   <div
                     key={i}
-                    className={`animate-flicker-in max-w-[88%] rounded-xl border px-3 py-2 text-sm ${
+                    className={`animate-flicker-in max-w-[92%] rounded-xl border px-3 py-2 text-sm sm:max-w-[88%] ${
                       m.role === "user"
                         ? "ml-auto border-primary/40 bg-secondary/60 text-foreground"
                         : "border-accent/30 bg-muted/40 text-foreground/95"
@@ -600,13 +601,13 @@ const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) 
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="Type a directive for Eva…"
                   aria-label="Message Eva"
-                  className="h-10 flex-1 rounded-full border border-border bg-secondary/50 px-4 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:border-accent/60"
+                  className="h-11 flex-1 rounded-full border border-border bg-secondary/50 px-4 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:border-accent/60"
                 />
                 <button
                   type="submit"
                   disabled={thinking}
                   aria-label="Send"
-                  className="grid size-10 place-items-center rounded-full border border-accent/50 bg-secondary text-accent transition hover:scale-105 disabled:opacity-40"
+                  className="grid size-11 shrink-0 place-items-center rounded-full border border-accent/50 bg-secondary text-accent transition hover:scale-105 disabled:opacity-40"
                   style={{ boxShadow: "var(--shadow-glow)" }}
                 >
                   <Send size={15} />
@@ -614,7 +615,7 @@ const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) 
               </form>
             </HoloPanel>
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2">
               <SystemStatusWidget delay={260} connections={connections} task={task} />
               <SystemHealthWidget delay={280} />
               <WeatherWidget delay={300} />
@@ -623,7 +624,7 @@ const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) 
           </div>
 
           {/* Right rail */}
-          <div className="space-y-4">
+          <div className="order-3 space-y-4 lg:order-none">
             <MicrosoftConnectionPanel delay={40} />
             <InboxWidget delay={80} />
             <ScheduleWidget delay={120} />
@@ -643,3 +644,4 @@ const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) 
     </main>
   );
 }
+       

@@ -5,7 +5,7 @@ import { isAuthorizedEmail } from "@/lib/authorized-user";
 import { ParticleField } from "@/components/eva/ParticleField";
 
 export const Route = createFileRoute("/auth")({
-  validateSearch: (search: Record<string, unknown>) => ({
+ validateSearch: (search: Record<string, unknown>): { denied?: string } => ({
     denied: typeof search.denied === "string" ? search.denied : undefined,
   }),
   head: () => ({

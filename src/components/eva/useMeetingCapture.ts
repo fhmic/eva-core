@@ -41,6 +41,7 @@ export function useMeetingCapture() {
   const startRef = useRef(0);
   const segCounter = useRef(0);
   const segmentsRef = useRef<TranscriptSegment[]>([]);
+  const chunksRef = useRef<Blob[]>([]);
 
   const cleanup = useCallback(() => {
     try {
@@ -71,7 +72,7 @@ export function useMeetingCapture() {
     wsRef.current = null;
   }, []);
 
-  const stop = useCallback(async (): Promise<TranscriptSegment[]> => {
+  const stop = useCallback(async (): Promise<{ segments: TranscriptSegment[]; audioBlob: Blob | null }> => {
     setStatus("stopping");
     // Let Deepgram flush any final result still in flight before we tear the socket down.
     try {
@@ -83,7 +84,10 @@ export function useMeetingCapture() {
     cleanup();
     setStatus("idle");
     setInterim("");
-    return segmentsRef.current;
+    const audioBlob = chunksRef.current.length
+      ? new Blob(chunksRef.current, { type: "audio/webm" })
+      : null;
+    return { segments: segmentsRef.current, audioBlob };
   }, [cleanup]);
 
   const start = useCallback(
@@ -93,6 +97,7 @@ export function useMeetingCapture() {
       setInterim("");
       segCounter.current = 0;
       segmentsRef.current = [];
+      chunksRef.current = [];
       setStatus("connecting");
 
       try {
@@ -140,11 +145,14 @@ export function useMeetingCapture() {
           const recorder = new MediaRecorder(combined, { mimeType: "audio/webm;codecs=opus" });
           recorderRef.current = recorder;
           recorder.ondataavailable = (e) => {
-            if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-              e.data
-                .arrayBuffer()
-                .then((buf) => ws.send(buf))
-                .catch(() => {});
+            if (e.data.size > 0) {
+              chunksRef.current.push(e.data);
+              if (ws.readyState === WebSocket.OPEN) {
+                e.data
+                  .arrayBuffer()
+                  .then((buf) => ws.send(buf))
+                  .catch(() => {});
+              }
             }
           };
           recorder.start(250);

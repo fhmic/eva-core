@@ -340,7 +340,7 @@ const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) 
         let spoken = cleaned || reply;
         append("assistant", spoken);
 
-        if (calls.length && bridge) {
+       if (calls.length && bridge) {
           const { results, tree } = await runToolCalls(
             bridge.dir,
             calls,
@@ -353,14 +353,21 @@ const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) 
             if (!call || !AUDITED.has(call.tool)) continue;
             await logAudit(call.tool, auditPath(call) ?? null, results[i].ok, results[i].message);
           }
-          const report = results.map((r) => `- ${r.ok ? "OK" : "FAILED"}: ${r.message}`).join("\n");
+          const hadReads = calls.some((c) => c.tool === "read_file");
+          const MAX_REPORT_CHARS = 18000; // leaves headroom under the 24000-char message cap
+          let report = results.map((r) => `- ${r.ok ? "OK" : "FAILED"}: ${r.message}`).join("\n");
+          if (report.length > MAX_REPORT_CHARS) {
+            report = `${report.slice(0, MAX_REPORT_CHARS)}\n[report truncated — ask Felix to read fewer files at once if you need the rest]`;
+          }
           append("assistant", `**Disk agent report**\n${report}`);
           const followUp: Msg[] = [
             ...next,
             { role: "assistant", content: spoken },
             {
               role: "user",
-              content: `[file agent verification]\n${report}\n\nVerified contents of /${bridge.dir.name}:\n${tree.join("\n") || "empty"}\n\nConfirm the outcome to Felix in one or two sentences.`,
+              content: hadReads
+                ? `[file agent verification]\n${report}\n\nVerified contents of /${bridge.dir.name}:\n${tree.join("\n") || "empty"}\n\nThe above includes actual file contents from read_file. Genuinely study/analyze/answer using that content now — don't just confirm you read it. Give Felix the substantive answer he actually asked for.`
+                : `[file agent verification]\n${report}\n\nVerified contents of /${bridge.dir.name}:\n${tree.join("\n") || "empty"}\n\nConfirm the outcome to Felix in one or two sentences.`,
             },
           ];
           const confirmation = await chat({ data: { messages: followUp.slice(-20) } });

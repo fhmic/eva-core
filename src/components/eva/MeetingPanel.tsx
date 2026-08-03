@@ -18,25 +18,37 @@ export function MeetingPanel({
 }) {
   const cap = useMeetingCapture();
   const [save, setSave] = useState<SaveState>({ phase: "idle" });
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [cap.segments, cap.interim]);
 
+  // Revoke the object URL whenever it's replaced or the panel unmounts, so we
+  // don't leak memory across repeated meetings.
+  useEffect(() => {
+    return () => {
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+    };
+  }, [audioUrl]);
+
   const recording = cap.status === "recording" || cap.status === "connecting";
 
   const handleStart = (mode: MeetingMode) => {
     setSave({ phase: "idle" });
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    setAudioUrl(null);
     void cap.start(mode);
   };
 
   const handleStop = async () => {
-    const segments = await cap.stop();
+    const { segments, audioBlob } = await cap.stop();
     if (!segments.length) {
       setSave({ phase: "error", detail: "No speech was captured, so there's nothing to save." });
       return;
     }
+    if (audioBlob) setAudioUrl(URL.createObjectURL(audioBlob));
 
     setSave({ phase: "generating" });
     let minutes;
@@ -47,7 +59,8 @@ export function MeetingPanel({
     } catch (err) {
       setSave({
         phase: "error",
-        detail: err instanceof Error ? err.message : "Could not generate minutes from the transcript.",
+        detail:
+          err instanceof Error ? err.message : "Could not generate minutes from the transcript.",
       });
       return;
     }
@@ -62,15 +75,22 @@ export function MeetingPanel({
       if (bridge) {
         await writeFilePath(bridge.dir, `Meetings/${base}.docx`, docxBlob);
         await writeFilePath(bridge.dir, `Meetings/${base}.md`, md);
+        if (audioBlob) await writeFilePath(bridge.dir, `Meetings/${base}.webm`, audioBlob);
         await bridge.refresh();
-        setSave({ phase: "done", detail: `Saved to /${bridge.dir.name}/Meetings/${base}.docx` });
-      } else {
-        // No workspace folder granted — fall back to a direct browser download
-        // so the minutes aren't lost.
-        downloadBlob(docxBlob, `${base}.docx`);
         setSave({
           phase: "done",
-          detail: "No workspace folder granted, so the .docx downloaded directly instead.",
+          detail: audioBlob
+            ? `Saved minutes and audio to /${bridge.dir.name}/Meetings/${base}.*`
+            : `Saved to /${bridge.dir.name}/Meetings/${base}.docx`,
+        });
+      } else {
+        // No workspace folder granted — fall back to direct browser downloads
+        // so nothing gets lost.
+        downloadBlob(docxBlob, `${base}.docx`);
+        if (audioBlob) downloadBlob(audioBlob, `${base}.webm`);
+        setSave({
+          phase: "done",
+          detail: "No workspace folder granted, so files downloaded directly instead.",
         });
       }
     } catch (err) {
@@ -110,7 +130,11 @@ export function MeetingPanel({
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-2 text-xs uppercase tracking-widest text-accent">
               <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
-              {cap.status === "connecting" ? "Connecting…" : cap.status === "stopping" ? "Saving…" : "Recording"}
+              {cap.status === "connecting"
+                ? "Connecting…"
+                : cap.status === "stopping"
+                  ? "Saving…"
+                  : "Recording"}
             </span>
             <button
               onClick={handleStop}
@@ -129,7 +153,9 @@ export function MeetingPanel({
           className="max-h-56 min-h-[80px] overflow-y-auto rounded-lg border border-white/10 bg-black/20 p-3 text-xs leading-relaxed"
         >
           {!cap.segments.length && !cap.interim && (
-            <p className="text-muted-foreground">Transcript will appear here once the meeting starts.</p>
+            <p className="text-muted-foreground">
+              Transcript will appear here once the meeting starts.
+            </p>
           )}
           {cap.segments.map((s) => (
             <p key={s.id} className="mb-1.5">
@@ -139,6 +165,12 @@ export function MeetingPanel({
           ))}
           {cap.interim && <p className="italic text-muted-foreground">{cap.interim}</p>}
         </div>
+
+        {audioUrl && (
+          <audio controls src={audioUrl} className="w-full" preload="metadata">
+            Your browser does not support inline audio playback.
+          </audio>
+        )}
 
         {save.phase !== "idle" && (
           <p

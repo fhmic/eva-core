@@ -140,8 +140,15 @@ export async function executeToolCall(
       }
       case "read_file": {
         const file = await readFilePath(dir, call.path);
-        const text = (await file.text()).slice(0, 4000);
-        return { tool: call.tool, ok: true, message: `Contents of ${call.path}:\n${text}` };
+        const full = await file.text();
+        const text = full.slice(0, 8000);
+        const truncated = full.length > 8000;
+        return {
+          tool: call.tool,
+          ok: true,
+          message: `Contents of ${call.path}:\n${text}${truncated ? "\n[file truncated at 8000 chars — ask to read it in sections if you need the rest]" : ""}`,
+        };
+      }
       }
       case "list_directory": {
         const entries = await listPath(dir, call.path);

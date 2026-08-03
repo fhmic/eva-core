@@ -1,9 +1,13 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { isAuthorizedEmail } from "@/lib/authorized-user";
 import { ParticleField } from "@/components/eva/ParticleField";
 
 export const Route = createFileRoute("/auth")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    denied: typeof search.denied === "string" ? search.denied : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Sign in to EVA — Executive Virtual Assistant" },
@@ -26,39 +30,39 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const search = useSearch({ from: "/auth" });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    search.denied ? "That account is not authorised to access EVA." : null,
+  );
 
   useEffect(() => {
     void supabase.auth.getSession().then(({ data }) => {
-      if (data.session) void navigate({ to: "/" });
+      if (data.session && isAuthorizedEmail(data.session.user.email)) {
+        void navigate({ to: "/" });
+      }
     });
   }, [navigate]);
+
+  const rejectUnlessAuthorized = async (userEmail: string | null | undefined) => {
+    if (isAuthorizedEmail(userEmail)) {
+      void navigate({ to: "/" });
+      return;
+    }
+    await supabase.auth.signOut();
+    setError("That account is not authorised to access EVA.");
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    setNotice(null);
     try {
-      if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { emailRedirectTo: window.location.origin },
-        });
-        if (error) throw error;
-        setNotice("Account created. Check your inbox if confirmation is required, then sign in.");
-        setMode("signin");
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        void navigate({ to: "/" });
-      }
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      await rejectUnlessAuthorized(data.user?.email);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Authentication failed.");
     } finally {
@@ -70,16 +74,16 @@ function AuthPage() {
     setError(null);
     try {
       const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
+        provider: "google",
         options: { redirectTo: window.location.origin },
       } as any);
       if (error) throw error;
-      // If Supabase returns a redirect url, follow it
       if ((data as any)?.url) {
         window.location.href = (data as any).url;
         return;
       }
-      void navigate({ to: "/" });
+      const { data: session } = await supabase.auth.getSession();
+      await rejectUnlessAuthorized(session.session?.user.email);
     } catch (err) {
       setError("Google sign-in failed. Please try again.");
     }
@@ -120,7 +124,7 @@ function AuthPage() {
             className="h-10 w-full rounded-full border border-accent/50 bg-secondary text-sm text-accent transition hover:scale-[1.02] disabled:opacity-40"
             style={{ boxShadow: "var(--shadow-glow)" }}
           >
-            {mode === "signin" ? "Sign in" : "Create account"}
+            Sign in
           </button>
         </form>
 
@@ -132,14 +136,6 @@ function AuthPage() {
         </button>
 
         {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
-        {notice && <p className="mt-3 text-xs text-accent">{notice}</p>}
-
-        <button
-          onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-          className="mt-4 w-full text-center text-xs text-muted-foreground transition hover:text-accent"
-        >
-          {mode === "signin" ? "No account yet? Register" : "Already registered? Sign in"}
-        </button>
       </div>
     </main>
   );

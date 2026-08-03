@@ -69,34 +69,31 @@ export async function generateMinutes(transcript: string): Promise<MeetingMinute
  * Deepgram's realtime WebSocket API is meant to be spoken to directly from the
  * browser — proxying raw audio through our own serverless function isn't
  * viable on Vercel (no persistent connections), so instead this mints a
- * short-lived, scoped key server-side and hands it to the client, which opens
- * its own socket straight to Deepgram. Requires DEEPGRAM_API_KEY (a full
- * account key with key-management rights) and DEEPGRAM_PROJECT_ID in env.
+ * short-lived access token server-side via Deepgram's token-grant endpoint
+ * and hands it to the client, which opens its own socket straight to
+ * Deepgram. This only requires DEEPGRAM_API_KEY (any Member-or-higher key —
+ * no admin "keys:write" scope needed, and no project ID either, since /auth/grant
+ * is scoped to whichever project the key already belongs to).
  */
-export async function mintDeepgramToken(): Promise<{ key: string; expiresInSeconds: number }> {
+export async function mintDeepgramToken(): Promise<{ accessToken: string; expiresInSeconds: number }> {
   const apiKey = process.env.DEEPGRAM_API_KEY;
-  const projectId = process.env.DEEPGRAM_PROJECT_ID;
-  if (!apiKey || !projectId) {
+  if (!apiKey) {
     throw new Error(
-      "Meeting transcription is not configured: set DEEPGRAM_API_KEY and DEEPGRAM_PROJECT_ID in your environment (from your Deepgram account's project settings).",
+      "Meeting transcription is not configured: set DEEPGRAM_API_KEY in your environment (from your Deepgram account's project settings — any Member-level key works).",
     );
   }
   const ttl = 3600;
-  const res = await fetch(`https://api.deepgram.com/v1/projects/${projectId}/keys`, {
+  const res = await fetch("https://api.deepgram.com/v1/auth/grant", {
     method: "POST",
     headers: { Authorization: `Token ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      comment: "eva-meeting-minutes temp key",
-      scopes: ["usage:write"],
-      time_to_live_in_seconds: ttl,
-    }),
+    body: JSON.stringify({ ttl_seconds: ttl }),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`Deepgram key mint failed [${res.status}]: ${body}`);
+    throw new Error(`Deepgram token grant failed [${res.status}]: ${body}`);
   }
   const data = await res.json();
-  const key = data?.key ?? data?.api_key?.key;
-  if (!key) throw new Error("Deepgram key mint succeeded but returned no key.");
-  return { key, expiresInSeconds: ttl };
+  const accessToken = data?.access_token;
+  if (!accessToken) throw new Error("Deepgram token grant succeeded but returned no access_token.");
+  return { accessToken, expiresInSeconds: data?.expires_in ?? ttl };
 }

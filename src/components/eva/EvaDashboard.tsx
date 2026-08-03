@@ -520,6 +520,7 @@ const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) 
             />
             <AuditLogPanel delay={80} version={auditVersion} />
             <MediaPanel delay={120} />
+            <MeetingPanel delay={140} getBridge={() => bridgeRef.current} />
             <RadarWidget delay={160} />
           </div>
 

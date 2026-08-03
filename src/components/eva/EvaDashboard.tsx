@@ -45,6 +45,7 @@ import { parseMediaIntent } from "@/lib/media-intents";
 import type { DirectoryHandleLike, WorkspaceEntry } from "@/lib/workspace";
 import { speak, stopSpeaking, useVoice } from "@/components/eva/useVoice";
 import { WorkspacePanel, type WorkspaceBridge } from "@/components/eva/WorkspacePanel";
+import { MeetingPanel } from "@/components/eva/MeetingPanel";
 import { parseToolCalls, runToolCalls, type EvaToolCall } from "@/lib/file-agent";
 import { evaChat } from "@/lib/eva.functions";
 import { downloadUrl } from "@/lib/download.functions";

@@ -13,8 +13,7 @@ export type TranscriptSegment = {
 export type CaptureStatus = "idle" | "connecting" | "recording" | "stopping" | "error";
 
 const DG_URL =
-  "wss://api.deepgram.com/v1/listen?model=nova-3&diarize=true&punctuate=true&smart_format=true&interim_results=true&endpointing=300";
-
+  "wss://api.deepgram.com/v1/listen?model=nova-3&diarize_model=latest&punctuate=true&smart_format=true&interim_results=true&endpointing=300";
 function fmtClock(ms: number) {
   const total = Math.floor(ms / 1000);
   const h = String(Math.floor(total / 3600)).padStart(2, "0");
@@ -99,7 +98,7 @@ export function useMeetingCapture() {
       setStatus("connecting");
 
       try {
-        const { key } = await getMeetingToken();
+       const { accessToken } = await getMeetingToken();
 
         const micStream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true },

@@ -65,7 +65,7 @@ import {
 } from "@/lib/eva-db";
 import { parseVaToolCalls, runVaToolCalls } from "@/lib/va-agent";
 
-const GREETING = "Good day Felix. Eva online and ready. How may I assist you today?";
+const GREETING = "Good day Felix. Eva online and ready.";
 
 const AUDITED = new Set(["create_folder", "write_file", "move_file", "delete_file"]);
 

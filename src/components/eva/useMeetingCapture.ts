@@ -40,6 +40,7 @@ export function useMeetingCapture() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const startRef = useRef(0);
   const segCounter = useRef(0);
+  const segmentsRef = useRef<TranscriptSegment[]>([]);
 
   const cleanup = useCallback(() => {
     try {
@@ -78,16 +79,11 @@ export function useMeetingCapture() {
     } catch {
       /* socket already gone */
     }
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => setTimeout(r, 900));
     cleanup();
     setStatus("idle");
     setInterim("");
-    let final: TranscriptSegment[] = [];
-    setSegments((s) => {
-      final = s;
-      return s;
-    });
-    return final;
+    return segmentsRef.current;
   }, [cleanup]);
 
   const start = useCallback(
@@ -96,6 +92,7 @@ export function useMeetingCapture() {
       setSegments([]);
       setInterim("");
       segCounter.current = 0;
+      segmentsRef.current = [];
       setStatus("connecting");
 
       try {
@@ -172,7 +169,8 @@ export function useMeetingCapture() {
                 text: text.trim(),
                 atMs,
               };
-              setSegments((prev) => [...prev, seg]);
+              segmentsRef.current = [...segmentsRef.current, seg];
+              setSegments(segmentsRef.current);
               setInterim("");
             } else {
               setInterim(`${speaker}: ${text}`);

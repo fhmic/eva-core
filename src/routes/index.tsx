@@ -7,13 +7,13 @@ import { ParticleField } from "@/components/eva/ParticleField";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "EVA — Executive Virtual Assistant Interface" },
+      { title: "EVA: Executive Virtual Assistant Interface" },
       {
         name: "description",
         content:
           "EVA is a holographic AI command deck with voice control, persistent conversation memory, a local file agent and a timestamped disk audit log.",
       },
-      { property: "og:title", content: "EVA — Executive Virtual Assistant Interface" },
+      { property: "og:title", content: "EVA: Executive Virtual Assistant Interface" },
       {
         property: "og:description",
         content:

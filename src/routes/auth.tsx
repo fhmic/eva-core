@@ -10,7 +10,7 @@ export const Route = createFileRoute("/auth")({
   }),
   head: () => ({
     meta: [
-      { title: "Sign in to EVA — Executive Virtual Assistant" },
+      { title: "Sign in to EVA: Executive Virtual Assistant" },
       {
         name: "description",
         content:

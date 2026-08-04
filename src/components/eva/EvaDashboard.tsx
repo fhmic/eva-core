@@ -288,7 +288,6 @@ if (meetingIntent) {
   return;
 }
 
-const intent = parseMediaIntent(clean);
       const intent = parseMediaIntent(clean);
          if (intent) {
         append("user", clean);

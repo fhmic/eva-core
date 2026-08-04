@@ -4,13 +4,13 @@ import { EvaDashboard } from "@/components/eva/EvaDashboard";
 export const Route = createFileRoute("/_authenticated/s/$threadId")({
   head: () => ({
     meta: [
-      { title: "EVA Session — Executive Virtual Assistant Deck" },
+      { title: "EVA Session: Executive Virtual Assistant Deck" },
       {
         name: "description",
         content:
           "A saved EVA session: conversation memory, voice control, workspace file agent and a timestamped disk audit log.",
       },
-      { property: "og:title", content: "EVA Session — Executive Virtual Assistant Deck" },
+      { property: "og:title", content: "EVA Session: Executive Virtual Assistant Deck" },
       {
         property: "og:description",
         content:

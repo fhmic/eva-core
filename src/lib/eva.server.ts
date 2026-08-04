@@ -228,7 +228,7 @@ async function callGemini(messages: EvaMessage[]) {
   return parts.map((p: { text?: string }) => p.text ?? "").join("");
 }
 
-async function callProvider(messages: EvaMessage[]): Promise<string> {
+export async function callProvider(messages: EvaMessage[]): Promise<string> {
   // provider preference order: OpenRouter → NVIDIA NIM → Groq → Gemini → HuggingFace
   if (process.env.OPENROUTER_API_KEY) return await callOpenRouter(messages);
   if (process.env.NVIDIA_API_KEY) return await callNvidia(messages);

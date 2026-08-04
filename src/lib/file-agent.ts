@@ -149,7 +149,6 @@ export async function executeToolCall(
           message: `Contents of ${call.path}:\n${text}${truncated ? "\n[file truncated at 8000 chars — ask to read it in sections if you need the rest]" : ""}`,
         };
       }
-      }
       case "list_directory": {
         const entries = await listPath(dir, call.path);
         return {

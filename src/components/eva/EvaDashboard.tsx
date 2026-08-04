@@ -46,6 +46,8 @@ import type { DirectoryHandleLike, WorkspaceEntry } from "@/lib/workspace";
 import { speak, stopSpeaking, useVoice } from "@/components/eva/useVoice";
 import { WorkspacePanel, type WorkspaceBridge } from "@/components/eva/WorkspacePanel";
 import { MeetingPanel } from "@/components/eva/MeetingPanel";
+import { MeetingProvider, useMeetingContext } from "@/components/eva/MeetingContext";
+import { parseMeetingIntent } from "@/lib/meeting-intents";
 import { parseToolCalls, runToolCalls, type EvaToolCall } from "@/lib/file-agent";
 import { evaChat } from "@/lib/eva.functions";
 import { downloadUrl } from "@/lib/download.functions";
@@ -73,12 +75,14 @@ type Msg = { role: "user" | "assistant"; content: string };
 
 export function EvaDashboard({ threadId }: { threadId: string }) {
   return (
-    <MicrosoftProvider>
-      <MediaProvider>
+  <MicrosoftProvider>
+    <MediaProvider>
+      <MeetingProvider>
         <Dashboard key={threadId} threadId={threadId} />
-      </MediaProvider>
-    </MicrosoftProvider>
-  );
+      </MeetingProvider>
+    </MediaProvider>
+  </MicrosoftProvider>
+);
 }
 
 function auditPath(call: EvaToolCall) {
@@ -107,6 +111,10 @@ function Dashboard({ threadId }: { threadId: string }) {
   const vaProgressRef = useRef<VaProgress>({ currentDay: 1, status: "not_started", profile: {} });
   const workspaceRef = useRef<string>("");
   const bridgeRef = useRef<WorkspaceBridge | null>(null);
+  const meeting = useMeetingContext();
+useEffect(() => {
+  meeting.registerBridgeGetter(() => bridgeRef.current);
+}, [meeting]);
   const voiceCtl = useRef<{ suspend: () => void; resume: () => void }>({
     suspend: () => {},
     resume: () => {},
@@ -254,9 +262,35 @@ const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) 
       const clean = text.trim();
       if (!clean || thinking) return;
       hush();
+    const meetingIntent = parseMeetingIntent(clean);
+if (meetingIntent) {
+  append("user", clean);
+  setInput("");
+  let reply = "";
+  if (meetingIntent.type === "start_meeting") {
+    if (meeting.status === "recording" || meeting.status === "connecting") {
+      reply = "A meeting is already being captured, Felix — say \"end meeting\" first if you'd like to restart.";
+    } else {
+      meeting.startMeeting(meetingIntent.mode);
+      reply =
+        meetingIntent.mode === "online"
+          ? "Starting online call capture — Chrome will ask you to share a tab and check \"Share tab audio.\""
+          : "Starting in-person meeting capture now.";
+    }
+  } else {
+    reply =
+      meeting.status === "recording" || meeting.status === "connecting"
+        ? await meeting.endMeeting()
+        : "No meeting is currently being captured, Felix.";
+  }
+  append("assistant", reply);
+  if (voiceReply) say(reply);
+  return;
+}
 
+const intent = parseMediaIntent(clean);
       const intent = parseMediaIntent(clean);
-      if (intent) {
+         if (intent) {
         append("user", clean);
         setInput("");
         let reply = "";
@@ -385,7 +419,7 @@ const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) 
         setThinking(false);
       }
     },
-    [append, chat, hush, logAudit, media, say, thinking],
+    [append, chat, hush, logAudit, media, meeting, say, thinking],
   );
 
   // Name the session after Felix's first directive.
@@ -527,7 +561,7 @@ const onWorkspace = useCallback((dir: string | null, entries: WorkspaceEntry[]) 
             />
             <AuditLogPanel delay={80} version={auditVersion} />
             <MediaPanel delay={120} />
-            <MeetingPanel delay={140} getBridge={() => bridgeRef.current} />
+            <MeetingPanel delay={140} />
             <RadarWidget delay={160} />
           </div>
 

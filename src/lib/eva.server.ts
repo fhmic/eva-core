@@ -1,19 +1,45 @@
 import { EVA_SYSTEM_PROMPT } from "./eva-prompt";
 import { webSearch } from "./websearch.server";
+import {
+  githubListTree,
+  githubProposeChange,
+  githubReadFile,
+  githubSearchCode,
+} from "./github.server";
 
 export type EvaMessage = { role: "user" | "assistant" | "system"; content: string };
 
-type EvaToolCall = { tool: "web_search"; query: string };
+type EvaToolCall =
+  | { tool: "web_search"; query: string }
+  | { tool: "github_list_tree" }
+  | { tool: "github_search_code"; query: string }
+  | { tool: "github_read_file"; path: string }
+  | {
+      tool: "github_propose_change";
+      changes: Array<{ path: string; content: string }>;
+      slug: string;
+      commitMessage: string;
+      prTitle: string;
+      prBody: string;
+    };
 
 const TOOL_BLOCK = /```eva-tool\s*([\s\S]*?)```/;
+
+const KNOWN_TOOLS = new Set([
+  "web_search",
+  "github_list_tree",
+  "github_search_code",
+  "github_read_file",
+  "github_propose_change",
+]);
 
 function extractToolCall(text: string): EvaToolCall | null {
   const match = text.match(TOOL_BLOCK);
   if (!match) return null;
   try {
     const parsed = JSON.parse(match[1].trim());
-    if (parsed?.tool === "web_search" && typeof parsed.query === "string" && parsed.query.trim()) {
-      return { tool: "web_search", query: parsed.query.trim() };
+    if (parsed?.tool && KNOWN_TOOLS.has(parsed.tool)) {
+      return parsed as EvaToolCall;
     }
   } catch {
     // malformed block — treat as no tool call, let the model's prose stand
@@ -22,12 +48,10 @@ function extractToolCall(text: string): EvaToolCall | null {
 }
 
 async function runToolCall(call: EvaToolCall): Promise<string> {
-  if (call.tool === "web_search") {
-    try {
+  try {
+    if (call.tool === "web_search") {
       const { answer, results } = await webSearch(call.query);
-      const lines = results.map(
-        (r, i) => `${i + 1}. ${r.title} (${r.url})\n${r.content}`,
-      );
+      const lines = results.map((r, i) => `${i + 1}. ${r.title} (${r.url})\n${r.content}`);
       return [
         `Search results for "${call.query}":`,
         answer ? `Quick answer: ${answer}` : null,
@@ -35,11 +59,37 @@ async function runToolCall(call: EvaToolCall): Promise<string> {
       ]
         .filter(Boolean)
         .join("\n\n");
-    } catch (err) {
-      return `Web search failed: ${err instanceof Error ? err.message : String(err)}`;
     }
+
+    if (call.tool === "github_list_tree") {
+      const paths = await githubListTree();
+      return `Repo file tree (${paths.length} files):\n${paths.join("\n")}`;
+    }
+
+    if (call.tool === "github_search_code") {
+      const results = await githubSearchCode(call.query);
+      if (!results.length) return `No code search results for "${call.query}".`;
+      return `Code search results for "${call.query}":\n${results
+        .map((r, i) => `${i + 1}. ${r.path}`)
+        .join("\n")}`;
+    }
+
+    if (call.tool === "github_read_file") {
+      const { content, truncated } = await githubReadFile(call.path);
+      return `Contents of ${call.path} (from GitHub, base branch):\n${content}${
+        truncated ? "\n[truncated at 60000 chars]" : ""
+      }`;
+    }
+
+    if (call.tool === "github_propose_change") {
+      const { prUrl, prNumber } = await githubProposeChange(call);
+      return `Opened PR #${prNumber}: ${prUrl}\nFelix must review and merge this himself — nothing is live yet.`;
+    }
+
+    return "Unknown tool.";
+  } catch (err) {
+    return `${call.tool} failed: ${err instanceof Error ? err.message : String(err)}`;
   }
-  return "Unknown tool.";
 }
 
 function normalizeApiBase(base: string | undefined, fallback: string) {
@@ -178,8 +228,7 @@ async function callGemini(messages: EvaMessage[]) {
   return parts.map((p: { text?: string }) => p.text ?? "").join("");
 }
 
-export 
-  async function callProvider(messages: EvaMessage[]): Promise<string> {
+async function callProvider(messages: EvaMessage[]): Promise<string> {
   // provider preference order: OpenRouter → NVIDIA NIM → Groq → Gemini → HuggingFace
   if (process.env.OPENROUTER_API_KEY) return await callOpenRouter(messages);
   if (process.env.NVIDIA_API_KEY) return await callNvidia(messages);
@@ -192,7 +241,22 @@ export
   );
 }
 
-const MAX_TOOL_ROUNDS = 3;
+const MAX_TOOL_ROUNDS = 6;
+
+function describeCall(call: EvaToolCall): string {
+  switch (call.tool) {
+    case "web_search":
+      return `web_search("${call.query}")`;
+    case "github_list_tree":
+      return "github_list_tree()";
+    case "github_search_code":
+      return `github_search_code("${call.query}")`;
+    case "github_read_file":
+      return `github_read_file("${call.path}")`;
+    case "github_propose_change":
+      return `github_propose_change(${call.changes.map((c) => c.path).join(", ")})`;
+  }
+}
 
 export async function askEva(messages: EvaMessage[]): Promise<string> {
   const working: EvaMessage[] = [...messages];
@@ -208,7 +272,7 @@ export async function askEva(messages: EvaMessage[]): Promise<string> {
     const toolResult = await runToolCall(call);
     working.push(
       { role: "assistant", content: reply },
-      { role: "system", content: `Tool result for web_search("${call.query}"):\n\n${toolResult}` },
+      { role: "system", content: `Tool result for ${describeCall(call)}:\n\n${toolResult}` },
     );
   }
 

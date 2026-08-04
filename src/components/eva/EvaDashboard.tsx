@@ -515,7 +515,7 @@ if (meetingIntent) {
   const task = thinking ? "Reasoning" : speaking ? "Speaking" : voice.awake ? "Listening" : "Idle";
 
   return (
-    <main className="relative min-h-screen overflow-x-hidden">
+    <main className="relative min-h-screen overflow-x-auto">
       <NebulaField />
 
       <div className="relative z-10 mx-auto max-w-[1700px] px-4 py-5 lg:px-8">

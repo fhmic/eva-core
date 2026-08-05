@@ -23,6 +23,8 @@ import {
   listDirectory,
   pickWorkspace,
   readFile,
+  reconnectWorkspace,
+  restoreWorkspace,
   writeFile,
   type DirectoryHandleLike,
   type WorkspaceEntry,
@@ -147,10 +149,47 @@ export function WorkspacePanel({
     }
   };
 
-  const [mounted, setMounted] = useState(false);
+ const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const supported = mounted ? isFileSystemSupported() : true;
   const embedded = mounted ? isEmbedded() : false;
+
+  const [needsReconnect, setNeedsReconnect] = useState<DirectoryHandleLike | null>(null);
+
+  const adopt = useCallback(
+    async (dir: DirectoryHandleLike, verb: "granted" | "restored") => {
+      dirRef.current = dir;
+      setDirName(dir.name);
+      setStatus(`Access ${verb} to /${dir.name}`);
+      setNeedsReconnect(null);
+      await refresh();
+      onDirectory?.(dir);
+    },
+    [refresh, onDirectory],
+  );
+
+  useEffect(() => {
+    if (!mounted || !supported || embedded || dirRef.current) return;
+    void restoreWorkspace().then((restored) => {
+      if (!restored) return;
+      if (restored.granted) {
+        void adopt(restored.dir, "restored");
+      } else {
+        setNeedsReconnect(restored.dir);
+      }
+    });
+  }, [mounted, supported, embedded, adopt]);
+
+  const reconnect = async () => {
+    if (!needsReconnect) return;
+    try {
+      const ok = await reconnectWorkspace(needsReconnect);
+      if (ok) await adopt(needsReconnect, "restored");
+      else setStatus("Reconnect declined — grant folder access again below.");
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Reconnect failed");
+    }
+  };
 
   const requestConfirm = useCallback(
     (kind: "delete" | "overwrite", name: string) =>
@@ -203,14 +242,16 @@ export function WorkspacePanel({
         ) : null
       }
     >
-      {!dirName ? (
+     {!dirName ? (
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
             {!supported
               ? "Local folder access requires a Chromium desktop browser."
               : embedded
                 ? "Folder access is blocked inside the embedded preview. Open EVA in its own tab to grant access."
-                : "Grant Eva access to a single approved folder. All reads and writes stay inside it."}
+                : needsReconnect
+                  ? `Eva remembers /${needsReconnect.name} from last time — just confirm access again.`
+                  : "Grant Eva access to a single approved folder. All reads and writes stay inside it."}
           </p>
           {supported && embedded ? (
             <button
@@ -219,6 +260,14 @@ export function WorkspacePanel({
               style={{ boxShadow: "var(--shadow-glow)" }}
             >
               <ExternalLink size={14} /> Open EVA in a new tab
+            </button>
+          ) : needsReconnect ? (
+            <button
+              onClick={() => void reconnect()}
+              className="flex w-full items-center justify-center gap-2 rounded-full border border-accent/50 bg-secondary px-4 py-2 text-sm text-accent transition hover:scale-[1.02]"
+              style={{ boxShadow: "var(--shadow-glow)" }}
+            >
+              <FolderOpen size={14} /> Reconnect to /{needsReconnect.name}
             </button>
           ) : (
             <button

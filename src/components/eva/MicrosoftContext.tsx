@@ -29,12 +29,25 @@ type GraphData = {
   contacts: GraphContact[];
 };
 
+export type GraphSourceErrors = Partial
+  Record<"mail" | "events" | "chats" | "files" | "contacts", string>
+>;
+
+function friendlyGraphError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  if (raw.includes("[403]") || raw.includes("[401]")) {
+    return "Permission denied — this scope likely isn't granted/consented yet in your Azure App Registration.";
+  }
+  return raw.slice(0, 180);
+}
+
 type MicrosoftApi = GraphData & {
   configured: boolean;
   connected: boolean;
   account: string | null;
   loading: boolean;
   error: string | null;
+  sourceErrors: GraphSourceErrors;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -60,21 +73,47 @@ export function MicrosoftProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<GraphData>(EMPTY);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sourceErrors, setSourceErrors] = useState<GraphSourceErrors>({});
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    const errs: GraphSourceErrors = {};
     try {
-      const [me, mail, events, chats, files, contacts] = await Promise.all([
-        graph.me(),
-        graph.mail().catch(() => ({ messages: [] as GraphMail[], unread: 0 })),
-        graph.events().catch(() => [] as GraphEvent[]),
-        graph.chats().catch(() => [] as GraphChat[]),
-        graph.files().catch(() => [] as GraphDriveItem[]),
-        graph.contacts().catch(() => [] as GraphContact[]),
-      ]);
+      const me = await graph.me();
       setAccount(me.displayName || me.mail || me.userPrincipalName);
-      setData({ mail: mail.messages, unread: mail.unread, events, chats, files, contacts });
+
+      const [mailRes, eventsRes, chatsRes, filesRes, contactsRes] = await Promise.all([
+        graph.mail().catch((err) => {
+          errs.mail = friendlyGraphError(err);
+          return { messages: [] as GraphMail[], unread: 0 };
+        }),
+        graph.events().catch((err) => {
+          errs.events = friendlyGraphError(err);
+          return [] as GraphEvent[];
+        }),
+        graph.chats().catch((err) => {
+          errs.chats = friendlyGraphError(err);
+          return [] as GraphChat[];
+        }),
+        graph.files().catch((err) => {
+          errs.files = friendlyGraphError(err);
+          return [] as GraphDriveItem[];
+        }),
+        graph.contacts().catch((err) => {
+          errs.contacts = friendlyGraphError(err);
+          return [] as GraphContact[];
+        }),
+      ]);
+      setData({
+        mail: mailRes.messages,
+        unread: mailRes.unread,
+        events: eventsRes,
+        chats: chatsRes,
+        files: filesRes,
+        contacts: contactsRes,
+      });
+      setSourceErrors(errs);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Microsoft Graph is unreachable.");
     } finally {
@@ -107,6 +146,7 @@ export function MicrosoftProvider({ children }: { children: ReactNode }) {
     await msSignOut().catch(() => {});
     setAccount(null);
     setData(EMPTY);
+    setSourceErrors({});
   }, []);
 
   const value = useMemo<MicrosoftApi>(
@@ -117,11 +157,12 @@ export function MicrosoftProvider({ children }: { children: ReactNode }) {
       account,
       loading,
       error,
+      sourceErrors,
       connect,
       disconnect,
       refresh: load,
     }),
-    [data, configured, account, loading, error, connect, disconnect, load],
+    [data, configured, account, loading, error, sourceErrors, connect, disconnect, load],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

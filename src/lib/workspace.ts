@@ -27,6 +27,84 @@ export function isFileSystemSupported() {
   return typeof window !== "undefined" && "showDirectoryPicker" in window;
 }
 
+/**
+ * Persists the granted directory handle in IndexedDB so Felix doesn't have to
+ * re-pick the folder from the OS dialog every time he opens the browser.
+ * FileSystemDirectoryHandle is structured-clone-serializable, so it can be
+ * stored directly. Permission itself still has to be re-verified each session
+ * (browser security requirement, not something app code can bypass) — but
+ * that's a single lightweight click-through prompt, not the full folder picker.
+ */
+const HANDLE_DB = "eva-workspace";
+const HANDLE_STORE = "handles";
+const HANDLE_KEY = "workspace-dir";
+
+function openHandleDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(HANDLE_DB, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(HANDLE_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveWorkspaceHandle(dir: DirectoryHandleLike): Promise<void> {
+  try {
+    const db = await openHandleDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(HANDLE_STORE, "readwrite");
+      tx.objectStore(HANDLE_STORE).put(dir, HANDLE_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // Persistence is a convenience — if it fails, Felix just re-grants next time.
+  }
+}
+
+async function loadStoredHandle(): Promise<DirectoryHandleLike | null> {
+  try {
+    const db = await openHandleDB();
+    return await new Promise<DirectoryHandleLike | null>((resolve, reject) => {
+      const tx = db.transaction(HANDLE_STORE, "readonly");
+      const req = tx.objectStore(HANDLE_STORE).get(HANDLE_KEY);
+      req.onsuccess = () => resolve((req.result as DirectoryHandleLike) ?? null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function forgetWorkspace(): Promise<void> {
+  try {
+    const db = await openHandleDB();
+    const tx = db.transaction(HANDLE_STORE, "readwrite");
+    tx.objectStore(HANDLE_STORE).delete(HANDLE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export type RestoredWorkspace = { dir: DirectoryHandleLike; granted: boolean };
+
+/** Looks up a previously-granted folder from IndexedDB — no OS picker involved. */
+export async function restoreWorkspace(): Promise<RestoredWorkspace | null> {
+  if (!isFileSystemSupported()) return null;
+  const dir = await loadStoredHandle();
+  if (!dir) return null;
+  const granted = (await dir.queryPermission?.({ mode: "readwrite" })) === "granted";
+  return { dir, granted };
+}
+
+/** Re-confirms permission on an already-known folder: one click, not a folder re-pick. */
+export async function reconnectWorkspace(dir: DirectoryHandleLike): Promise<boolean> {
+  const result = await dir.requestPermission?.({ mode: "readwrite" });
+  return result === "granted";
+}
+
 /** Preview/embedded frames are blocked from opening the OS directory picker. */
 export function isEmbedded() {
   if (typeof window === "undefined") return false;
@@ -54,7 +132,9 @@ export async function pickWorkspace(): Promise<DirectoryHandleLike> {
     );
   }
   // @ts-expect-error - showDirectoryPicker is not in all TS DOM libs
-  return (await window.showDirectoryPicker({ mode: "readwrite" })) as DirectoryHandleLike;
+  const dir = (await window.showDirectoryPicker({ mode: "readwrite" })) as DirectoryHandleLike;
+  await saveWorkspaceHandle(dir);
+  return dir;
 }
 
 export async function ensureWritable(dir: DirectoryHandleLike) {

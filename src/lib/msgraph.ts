@@ -15,7 +15,10 @@ import type { AccountInfo, PublicClientApplication } from "@azure/msal-browser";
 export const GRAPH_SCOPES = [
   "User.Read",
   "Mail.Read",
+  "Mail.ReadWrite",
+  "Mail.Send",
   "Calendars.Read",
+  "Calendars.ReadWrite",
   "Contacts.Read",
   "Files.Read",
   "Chat.Read",
@@ -96,6 +99,27 @@ export async function graphGet<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** Typed POST against the Graph v1.0 endpoint, for sending mail, creating drafts/events, etc. */
+export async function graphPost<T>(path: string, body: unknown): Promise<T | null> {
+  const token = await accessToken();
+  const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Microsoft Graph request failed [${res.status}]: ${errBody}`);
+  }
+  // Several write endpoints (e.g. /me/sendMail) return 202 with an empty body.
+  const text = await res.text();
+  return text ? (JSON.parse(text) as T) : null;
+}
+
 /* ---------------- Domain shapes + readers ---------------- */
 
 export type GraphMail = {
@@ -147,6 +171,37 @@ export const graph = {
     ]);
     return { messages: inbox.value, unread: unread.unreadItemCount };
   },
+  /** Reads a specific message's full body by id (not just the list preview). */
+  readMail: (id: string) =>
+    graphGet<{
+      subject: string;
+      from?: GraphMail["from"];
+      body: { content: string; contentType: string };
+      receivedDateTime: string;
+    }>(`/me/messages/${encodeURIComponent(id)}?$select=subject,from,body,receivedDateTime`),
+  /** Searches the inbox by subject/sender/body keyword. */
+  searchMail: async (query: string) =>
+    (
+      await graphGet<{ value: GraphMail[] }>(
+        `/me/messages?$search="${encodeURIComponent(query)}"&$top=5&$select=id,subject,from,bodyPreview,receivedDateTime,isRead`,
+      )
+    ).value,
+  /** Creates a draft in the Drafts folder — does NOT send it. */
+  draftMail: (to: string, subject: string, bodyHtml: string) =>
+    graphPost<{ id: string; webLink: string }>("/me/messages", {
+      subject,
+      body: { contentType: "HTML", content: bodyHtml },
+      toRecipients: [{ emailAddress: { address: to } }],
+    }),
+  /** Sends a message immediately — only call this after Felix has explicitly confirmed. */
+  sendMail: (to: string, subject: string, bodyHtml: string) =>
+    graphPost<null>("/me/sendMail", {
+      message: {
+        subject,
+        body: { contentType: "HTML", content: bodyHtml },
+        toRecipients: [{ emailAddress: { address: to } }],
+      },
+    }),
   events: async () => {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
@@ -157,6 +212,27 @@ export const graph = {
     );
     return res.value;
   },
+  /** Creates a calendar event. start/end are ISO 8601 local datetimes (no "Z"); timeZone defaults to UTC. */
+  createEvent: (
+    subject: string,
+    startIso: string,
+    endIso: string,
+    opts?: { location?: string; timeZone?: string; attendees?: string[] },
+  ) =>
+    graphPost<{ id: string; webLink: string }>("/me/events", {
+      subject,
+      start: { dateTime: startIso, timeZone: opts?.timeZone ?? "UTC" },
+      end: { dateTime: endIso, timeZone: opts?.timeZone ?? "UTC" },
+      ...(opts?.location ? { location: { displayName: opts.location } } : {}),
+      ...(opts?.attendees?.length
+        ? {
+            attendees: opts.attendees.map((a) => ({
+              emailAddress: { address: a },
+              type: "required",
+            })),
+          }
+        : {}),
+    }),
   chats: async () =>
     (await graphGet<{ value: GraphChat[] }>("/me/chats?$top=5&$orderby=lastUpdatedDateTime desc"))
       .value,

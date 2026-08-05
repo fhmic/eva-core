@@ -66,6 +66,7 @@ import {
   type VaProgress,
 } from "@/lib/eva-db";
 import { parseVaToolCalls, runVaToolCalls } from "@/lib/va-agent";
+import { parseGraphToolCalls, runGraphToolCalls } from "@/lib/graph-agent";
 
 const GREETING = "Good day Felix. Eva online and ready.";
 
@@ -347,7 +348,8 @@ if (meetingIntent) {
               i === payload.length - 1 ? { ...m, content: `${ctx}\n\n${m.content}` } : m,
             )
           : payload;
-      const { reply } = await chat({ data: { messages: withContext } });
+      
+        const { reply } = await chat({ data: { messages: withContext } });
         const { calls, cleaned } = parseToolCalls(reply);
         const vaCalls = parseVaToolCalls(reply);
         if (vaCalls.length) {
@@ -359,12 +361,22 @@ if (meetingIntent) {
               .catch(() => {}),
           );
         }
+        const graphCalls = parseGraphToolCalls(reply);
         const bridge = bridgeRef.current;
 
         if (calls.length && !bridge) {
           const notice =
             (cleaned ? `${cleaned}\n\n` : "") +
             "I need disk access first, Felix — grant a folder in the Local Workspace panel and I'll execute that immediately.";
+          append("assistant", notice);
+          if (voiceReply) say(notice);
+          return;
+        }
+
+        if (graphCalls.length && !ms.connected) {
+          const notice =
+            (cleaned ? `${cleaned}\n\n` : "") +
+            "I need your Microsoft account connected first, Felix — sign in from the Microsoft Graph panel and I'll run that immediately.";
           append("assistant", notice);
           if (voiceReply) say(notice);
           return;
@@ -408,8 +420,32 @@ if (meetingIntent) {
           append("assistant", spoken);
         }
 
+        if (graphCalls.length && ms.connected) {
+          const graphResults = await runGraphToolCalls(graphCalls);
+          const MAX_REPORT_CHARS = 18000;
+          let graphReport = graphResults
+            .map((r) => `- ${r.ok ? "OK" : "FAILED"}: ${r.message}`)
+            .join("\n\n");
+          if (graphReport.length > MAX_REPORT_CHARS) {
+            graphReport = `${graphReport.slice(0, MAX_REPORT_CHARS)}\n[report truncated]`;
+          }
+          append("assistant", `**Microsoft Graph report**\n${graphReport}`);
+          const followUp: Msg[] = [
+            ...next,
+            { role: "assistant", content: spoken },
+            {
+              role: "user",
+              content: `[graph agent result]\n${graphReport}\n\nThe above includes real data from Felix's Microsoft account (mail/calendar). Genuinely use it to answer now — don't just confirm you ran the tool. Give Felix the substantive answer, draft, or summary he actually asked for.`,
+            },
+          ];
+          const confirmation = await chat({ data: { messages: followUp.slice(-20) } });
+          spoken = parseToolCalls(confirmation.reply).cleaned || confirmation.reply;
+          append("assistant", spoken);
+        }
+
         if (voiceReply) say(spoken);
       } catch (err) {
+        
         append(
           "assistant",
           err instanceof Error ? err.message : "I couldn't reach the intelligence core, Felix.",
@@ -418,7 +454,7 @@ if (meetingIntent) {
         setThinking(false);
       }
     },
-    [append, chat, hush, logAudit, media, meeting, say, thinking],
+    [append, chat, hush, logAudit, media, meeting, ms, say, thinking],
   );
 
   // Name the session after Felix's first directive.

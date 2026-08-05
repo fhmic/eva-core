@@ -435,7 +435,7 @@ if (meetingIntent) {
             { role: "assistant", content: spoken },
             {
               role: "user",
-              content: `[graph agent result]\n${graphReport}\n\nThe above includes real data from Felix's Microsoft account (mail/calendar). Genuinely use it to answer now — don't just confirm you ran the tool. Give Felix the substantive answer, draft, or summary he actually asked for.`,
+              content: `[graph agent result]\n${graphReport}\n\nThe above includes real data from Felix's Microsoft account (mail/calendar/tasks). Genuinely use it to answer now — don't just confirm you ran the tool. Give Felix the substantive answer, draft, or summary he actually asked for.`,
             },
           ];
           const confirmation = await chat({ data: { messages: followUp.slice(-20) } });

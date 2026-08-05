@@ -22,6 +22,7 @@ export const GRAPH_SCOPES = [
   "Contacts.Read",
   "Files.Read",
   "Chat.Read",
+  "Tasks.ReadWrite",
 ];
 
 export const clientId = import.meta.env.VITE_MS_CLIENT_ID as string | undefined;
@@ -160,6 +161,28 @@ export type GraphContact = {
   emailAddresses?: { address: string; name?: string }[];
 };
 
+export type GraphTask = {
+  id: string;
+  title: string;
+  status: "notStarted" | "inProgress" | "completed" | "waitingOnOthers" | "deferred";
+  dueDateTime?: { dateTime: string; timeZone: string };
+  body?: { content: string; contentType: string };
+};
+
+let defaultTaskListId: string | null = null;
+
+/** Resolves (and caches) the id of Felix's default Microsoft To Do list. */
+async function getDefaultTaskListId(): Promise<string> {
+  if (defaultTaskListId) return defaultTaskListId;
+  const res = await graphGet<{ value: { id: string; wellknownListName?: string }[] }>(
+    "/me/todo/lists?$select=id,wellknownListName",
+  );
+  const list = res.value.find((l) => l.wellknownListName === "defaultList") ?? res.value[0];
+  if (!list) throw new Error("No Microsoft To Do task list found for this account.");
+  defaultTaskListId = list.id;
+  return list.id;
+}
+
 export const graph = {
   me: () => graphGet<{ displayName: string; mail?: string; userPrincipalName: string }>("/me"),
   mail: async () => {
@@ -248,4 +271,26 @@ export const graph = {
         "/me/contacts?$top=50&$select=id,displayName,emailAddresses",
       )
     ).value,
+  /** Lists open (non-completed) tasks from Felix's default Microsoft To Do list. */
+  tasks: async () => {
+    const listId = await getDefaultTaskListId();
+    const res = await graphGet<{ value: GraphTask[] }>(
+      `/me/todo/lists/${encodeURIComponent(listId)}/tasks?$top=25&$select=id,title,status,dueDateTime&$filter=status ne 'completed'`,
+    );
+    return res.value;
+  },
+  /** Creates a task in Felix's default Microsoft To Do list. dueIso is a local ISO datetime (no "Z"). */
+  createTask: async (
+    title: string,
+    opts?: { dueIso?: string; notes?: string; timeZone?: string },
+  ) => {
+    const listId = await getDefaultTaskListId();
+    return graphPost<{ id: string }>(`/me/todo/lists/${encodeURIComponent(listId)}/tasks`, {
+      title,
+      ...(opts?.dueIso
+        ? { dueDateTime: { dateTime: opts.dueIso, timeZone: opts?.timeZone ?? "UTC" } }
+        : {}),
+      ...(opts?.notes ? { body: { content: opts.notes, contentType: "text" } } : {}),
+    });
+  },
 };

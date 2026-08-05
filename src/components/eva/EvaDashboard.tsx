@@ -550,7 +550,7 @@ if (meetingIntent) {
         </header>
 <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)_240px] xl:grid-cols-[320px_minmax(0,1fr)_320px]">
           {/* Left rail */}
-          <div className="order-2 space-y-4 lg:order-none">
+          <div className="order-2 min-w-0 space-y-4 lg:order-none">
             <WorkspacePanel
               delay={40}
               bridgeRef={bridgeRef}
@@ -565,7 +565,7 @@ if (meetingIntent) {
           </div>
 
           {/* Command centre */}
-          <div className="order-1 space-y-4 lg:order-none">
+          <div className="order-1 min-w-0 space-y-4 lg:order-none">
             <div className="glass-panel relative flex min-h-[280px] items-center justify-center overflow-hidden p-4 sm:min-h-[360px] xl:min-h-[440px]">
               <div className="absolute inset-0 grid scale-[0.65] place-items-center origin-center sm:scale-[0.85] xl:scale-100">
                 <SubAgentOrbit agents={agents} />

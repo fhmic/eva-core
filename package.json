@@ -12,7 +12,7 @@
     "format": "prettier --write ."
   },
   "dependencies": {
-    "@azure/msal-browser": "^5.17.3",
+    "@azure/msal-browser": "^4.30.0",
     "@hookform/resolvers": "^5.2.2",
     "docx": "^9.7.1",
     "@radix-ui/react-accordion": "^1.2.12",

@@ -29,7 +29,7 @@ type GraphData = {
   contacts: GraphContact[];
 };
 
-export type GraphSourceErrors = Partial<Record<"mail" | "events" | "chats" | "files" | "contacts", string>>;
+export type GraphSourceErrors = Partial<Record<"mail" | "events" | "chats" | "files" | "contacts", string>;
 
 function friendlyGraphError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);

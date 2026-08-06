@@ -140,6 +140,45 @@ export type GraphEvent = {
   location?: { displayName?: string };
 };
 
+/** Simplified recurrence description Eva emits; translated into Graph's actual shape below. */
+export type RecurrenceInput = {
+  pattern:
+    | "daily"
+    | "weekly"
+    | "absoluteMonthly"
+    | "relativeMonthly"
+    | "absoluteYearly"
+    | "relativeYearly";
+  interval?: number;
+  daysOfWeek?: string[];
+  dayOfMonth?: number;
+  endDate?: string;
+  occurrences?: number;
+};
+
+/**
+ * Builds Microsoft Graph's actual `recurrence` object from the simplified
+ * input above. `range.startDate` must be a plain YYYY-MM-DD (Graph rejects a
+ * full datetime here), taken from the event's own start.
+ */
+function buildRecurrence(startIso: string, r: RecurrenceInput) {
+  const startDate = startIso.slice(0, 10);
+  const range = r.occurrences
+    ? { type: "numbered", startDate, numberOfOccurrences: r.occurrences }
+    : r.endDate
+      ? { type: "endDate", startDate, endDate: r.endDate }
+      : { type: "noEnd", startDate };
+  return {
+    pattern: {
+      type: r.pattern,
+      interval: r.interval ?? 1,
+      ...(r.daysOfWeek?.length ? { daysOfWeek: r.daysOfWeek } : {}),
+      ...(r.dayOfMonth ? { dayOfMonth: r.dayOfMonth } : {}),
+    },
+    range,
+  };
+}
+
 export type GraphChat = {
   id: string;
   topic?: string;
@@ -235,12 +274,17 @@ export const graph = {
     );
     return res.value;
   },
-  /** Creates a calendar event. start/end are ISO 8601 local datetimes (no "Z"); timeZone defaults to UTC. */
+  /** Creates a calendar event, optionally recurring. start/end are ISO 8601 local datetimes (no "Z"); timeZone defaults to UTC. */
   createEvent: (
     subject: string,
     startIso: string,
     endIso: string,
-    opts?: { location?: string; timeZone?: string; attendees?: string[] },
+    opts?: {
+      location?: string;
+      timeZone?: string;
+      attendees?: string[];
+      recurrence?: RecurrenceInput;
+    },
   ) =>
     graphPost<{ id: string; webLink: string }>("/me/events", {
       subject,
@@ -255,6 +299,7 @@ export const graph = {
             })),
           }
         : {}),
+      ...(opts?.recurrence ? { recurrence: buildRecurrence(startIso, opts.recurrence) } : {}),
     }),
   chats: async () =>
     (await graphGet<{ value: GraphChat[] }>("/me/chats?$top=5&$orderby=lastUpdatedDateTime desc"))

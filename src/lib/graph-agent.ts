@@ -210,10 +210,14 @@ async function execOne(call: GraphToolCall): Promise<GraphToolResult> {
 }
 
 /** Executes a batch of graph tool calls sequentially and returns a report per call. */
-export async function runGraphToolCalls(calls: GraphToolCall[]): Promise<GraphToolResult[]> {
+export async function runGraphToolCalls(
+  calls: GraphToolCall[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<GraphToolResult[]> {
   const results: GraphToolResult[] = [];
   for (const call of calls) {
     results.push(await execOne(call));
+    onProgress?.(results.length, calls.length);
   }
   return results;
 }

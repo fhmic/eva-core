@@ -2,6 +2,7 @@
  * EVA client-side file agent.
  *
  * The web runtime has no host disk access, so Eva emits structured tool calls
+ 
  * in her reply and this agent executes them directly against the approved
  * local directory handle (File System Access API) inside the browser process.
  * Every call is verified against physical storage afterwards.
@@ -46,7 +47,9 @@ function coerce(value: unknown): EvaToolCall[] {
   const items = Array.isArray(value) ? value : [value];
   return items.filter(
     (item): item is EvaToolCall =>
-      !!item && typeof item === "object" && KNOWN.has(String((item as any).tool)),
+      !!item &&
+      typeof item === "object" &&
+      KNOWN.has(String((item as Record<string, unknown>).tool)),
   );
 }
 

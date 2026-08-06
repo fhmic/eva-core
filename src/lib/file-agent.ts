@@ -199,8 +199,12 @@ export async function runToolCalls(
   calls: EvaToolCall[],
   confirm: ConfirmFn,
   download?: DownloadFn,
+  onProgress?: (done: number, total: number) => void,
 ): Promise<{ results: ToolResult[]; tree: string[] }> {
   const results: ToolResult[] = [];
-  for (const call of calls) results.push(await executeToolCall(dir, call, confirm, download));
+  for (const call of calls) {
+    results.push(await executeToolCall(dir, call, confirm, download));
+    onProgress?.(results.length, calls.length);
+  }
   return { results, tree: await listTree(dir) };
 }

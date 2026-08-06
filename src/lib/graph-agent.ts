@@ -8,7 +8,7 @@
  * descriptive failure — nothing here is a stub.
  */
 
-import { graph } from "./msgraph";
+import { graph, type RecurrenceInput } from "./msgraph";
 
 export type GraphToolCall =
   | { tool: "graph_list_mail" }
@@ -25,6 +25,7 @@ export type GraphToolCall =
       location?: string;
       attendees?: string[];
       timeZone?: string;
+      recurrence?: RecurrenceInput;
     }
   | { tool: "graph_list_tasks" }
   | {
@@ -155,10 +156,20 @@ async function execOne(call: GraphToolCall): Promise<GraphToolResult> {
           location: call.location,
           attendees: call.attendees,
           timeZone: call.timeZone,
+          recurrence: call.recurrence,
         });
+        const recurNote = call.recurrence
+          ? ` — recurring ${call.recurrence.pattern}${call.recurrence.interval && call.recurrence.interval > 1 ? ` (every ${call.recurrence.interval})` : ""}${
+              call.recurrence.occurrences
+                ? `, ${call.recurrence.occurrences} occurrences`
+                : call.recurrence.endDate
+                  ? `, until ${call.recurrence.endDate}`
+                  : ", no end date"
+            }`
+          : "";
         return {
           ok: true,
-          message: `Created event "${call.subject}" (${call.start} – ${call.end})${res?.webLink ? ` — ${res.webLink}` : ""}`,
+          message: `Created event "${call.subject}" (${call.start} – ${call.end})${recurNote}${res?.webLink ? ` — ${res.webLink}` : ""}`,
         };
       }
       case "graph_list_tasks": {

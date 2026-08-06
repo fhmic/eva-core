@@ -1,13 +1,14 @@
 import { motion } from "motion/react";
 import { useMemo } from "react";
 
-export type CoreState = "idle" | "listening" | "thinking" | "speaking";
+export type CoreState = "idle" | "listening" | "thinking" | "speaking" | "executing";
 
 const PALETTE: Record<CoreState, { ring: string; glow: string; label: string }> = {
   idle: { ring: "oklch(0.85 0.16 200)", glow: "oklch(0.85 0.16 200 / 0.35)", label: "ONLINE" },
   listening: { ring: "oklch(0.87 0.16 195)", glow: "oklch(0.87 0.16 195 / 0.6)", label: "LISTENING" },
   thinking: { ring: "oklch(0.68 0.22 305)", glow: "oklch(0.68 0.22 305 / 0.6)", label: "PROCESSING" },
   speaking: { ring: "oklch(0.9 0.15 205)", glow: "oklch(0.9 0.15 205 / 0.7)", label: "SPEAKING" },
+  executing: { ring: "oklch(0.78 0.19 70)", glow: "oklch(0.78 0.19 70 / 0.65)", label: "EXECUTING" },
 };
 
 /** Concentric holographic ring system that reacts to EVA's state. */
@@ -15,15 +16,25 @@ export function EvaCore({
   state = "idle",
   level = 0,
   size = 300,
+  progress,
+  progressLabel,
 }: {
   state?: CoreState;
   level?: number;
   size?: number;
+  /** 0–1 completion fraction, shown as a filling ring while state is "executing". */
+  progress?: number;
+  /** Short readout under the percentage, e.g. "2 of 3" or the action name. */
+  progressLabel?: string;
 }) {
   const p = PALETTE[state];
   const active = state !== "idle";
-  const speed = state === "thinking" ? 0.4 : state === "speaking" ? 0.7 : 1;
+  const speed = state === "thinking" ? 0.4 : state === "speaking" ? 0.7 : state === "executing" ? 0.55 : 1;
   const amp = state === "listening" || state === "speaking" ? 0.06 + level * 0.5 : 0.02;
+  const executing = state === "executing";
+  const pct = executing ? Math.max(0, Math.min(1, progress ?? 0)) : 0;
+  const RING_R = 64;
+  const RING_C = 2 * Math.PI * RING_R;
 
   const bars = useMemo(() => Array.from({ length: 48 }, (_, i) => i), []);
   const ticks = useMemo(() => Array.from({ length: 60 }, (_, i) => i), []);
@@ -84,6 +95,35 @@ export function EvaCore({
         })}
         <circle cx="100" cy="100" r="82" fill="none" stroke={p.ring} strokeWidth="0.5" opacity="0.35" />
       </motion.svg>
+
+      {/* execution progress ring — fills as real tool calls complete, not a fake spinner */}
+      {executing && (
+        <svg viewBox="0 0 200 200" className="absolute inset-0 size-full -rotate-90">
+          <circle
+            cx="100"
+            cy="100"
+            r={RING_R}
+            fill="none"
+            stroke={p.ring}
+            strokeWidth="3"
+            opacity="0.18"
+          />
+          <motion.circle
+            cx="100"
+            cy="100"
+            r={RING_R}
+            fill="none"
+            stroke={p.ring}
+            strokeWidth="3.5"
+            strokeLinecap="round"
+            strokeDasharray={RING_C}
+            style={{ filter: `drop-shadow(0 0 10px ${p.glow})` }}
+            animate={{ strokeDashoffset: RING_C * (1 - pct) }}
+            initial={false}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+          />
+        </svg>
+      )}
 
       {/* rotating arcs */}
       <motion.svg
@@ -179,6 +219,20 @@ export function EvaCore({
           style={{ background: `radial-gradient(circle, ${p.ring} 0%, transparent 70%)` }}
         />
       </motion.div>
+
+      {executing && (
+        <div className="pointer-events-none absolute inset-0 grid place-items-center">
+          <div className="text-center">
+            <span
+              className="font-display text-2xl font-semibold tabular-nums"
+              style={{ color: p.ring, textShadow: `0 0 14px ${p.glow}` }}
+            >
+              {Math.round(pct * 100)}%
+            </span>
+            {progressLabel && <p className="label-hud mt-0.5 opacity-80">{progressLabel}</p>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

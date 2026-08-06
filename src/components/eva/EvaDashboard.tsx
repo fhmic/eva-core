@@ -101,6 +101,7 @@ function Dashboard({ threadId }: { threadId: string }) {
   const [auditVersion, setAuditVersion] = useState(0);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
+  const [toolProgress, setToolProgress] = useState<{ done: number; total: number; label: string } | null>(null,);
   const [speaking, setSpeaking] = useState(false);
   const [clock, setClock] = useState("");
   const [workspaceActive, setWorkspaceActive] = useState(false);
@@ -420,8 +421,63 @@ if (meetingIntent) {
           append("assistant", spoken);
         }
 
+       if (calls.length && bridge) {
+          setToolProgress({ done: 0, total: calls.length, label: "Disk agent" });
+          const { results, tree } = await runToolCalls(
+            bridge.dir,
+            calls,
+            bridge.requestConfirm,
+            (url) => download({ data: { url } }),
+            (done, total) => setToolProgress({ done, total, label: "Disk agent" }),
+          );
+          setToolProgress(null);
+          await bridge.refresh();
+          for (let i = 0; i < results.length; i++) {
+            const call = calls[i];
+            if (!call || !AUDITED.has(call.tool)) continue;
+            await logAudit(call.tool, auditPath(call) ?? null, results[i].ok, results[i].message);
+          }
+          const hadReads = calls.some((c) => c.tool === "read_file");
+          const MAX_REPORT_CHARS = 18000; // leaves headroom under the 24000-char message cap
+          let report = results.map((r) => `- ${r.ok ? "OK" : "FAILED"}: ${r.message}`).join("\n");
+          if (report.length > MAX_REPORT_CHARS) {
+            report = `${report.slice(0, MAX_REPORT_CHARS)}\n[report truncated — ask Felix to read fewer files at once if you need the rest]`;
+          }
+          append("assistant", `**Disk agent report**\n${report}`);
+
+          const anyFailed = results.some((r) => !r.ok);
+          if (anyFailed) {
+            // Don't let a second model pass risk softening or glossing over a
+            // real failure — the exact error is what gets shown and spoken.
+            const failLines = results
+              .filter((r) => !r.ok)
+              .map((r) => `- ${r.message}`)
+              .join("\n");
+            spoken = `That didn't fully go through, Felix. Exact error${results.filter((r) => !r.ok).length > 1 ? "s" : ""}:\n${failLines}`;
+            append("assistant", spoken);
+          } else {
+            const followUp: Msg[] = [
+              ...next,
+              { role: "assistant", content: spoken },
+              {
+                role: "user",
+                content: hadReads
+                  ? `[file agent verification]\n${report}\n\nVerified contents of /${bridge.dir.name}:\n${tree.join("\n") || "empty"}\n\nThe above includes actual file contents from read_file. Genuinely study/analyze/answer using that content now — don't just confirm you read it. Give Felix the substantive answer he actually asked for.`
+                  : `[file agent verification]\n${report}\n\nVerified contents of /${bridge.dir.name}:\n${tree.join("\n") || "empty"}\n\nConfirm the outcome to Felix in one or two sentences.`,
+              },
+            ];
+            const confirmation = await chat({ data: { messages: followUp.slice(-20) } });
+            spoken = parseToolCalls(confirmation.reply).cleaned || confirmation.reply;
+            append("assistant", spoken);
+          }
+        }
+
         if (graphCalls.length && ms.connected) {
-          const graphResults = await runGraphToolCalls(graphCalls);
+          setToolProgress({ done: 0, total: graphCalls.length, label: "Microsoft Graph" });
+          const graphResults = await runGraphToolCalls(graphCalls, (done, total) =>
+            setToolProgress({ done, total, label: "Microsoft Graph" }),
+          );
+          setToolProgress(null);
           const MAX_REPORT_CHARS = 18000;
           let graphReport = graphResults
             .map((r) => `- ${r.ok ? "OK" : "FAILED"}: ${r.message}`)
@@ -430,27 +486,38 @@ if (meetingIntent) {
             graphReport = `${graphReport.slice(0, MAX_REPORT_CHARS)}\n[report truncated]`;
           }
           append("assistant", `**Microsoft Graph report**\n${graphReport}`);
-          const followUp: Msg[] = [
-            ...next,
-            { role: "assistant", content: spoken },
-            {
-              role: "user",
-              content: `[graph agent result]\n${graphReport}\n\nThe above includes real data from Felix's Microsoft account (mail/calendar/tasks). Genuinely use it to answer now — don't just confirm you ran the tool. Give Felix the substantive answer, draft, or summary he actually asked for.`,
-            },
-          ];
-          const confirmation = await chat({ data: { messages: followUp.slice(-20) } });
-          spoken = parseToolCalls(confirmation.reply).cleaned || confirmation.reply;
-          append("assistant", spoken);
+
+          const anyGraphFailed = graphResults.some((r) => !r.ok);
+          if (anyGraphFailed) {
+            const failLines = graphResults
+              .filter((r) => !r.ok)
+              .map((r) => `- ${r.message}`)
+              .join("\n");
+            spoken = `That didn't fully go through, Felix. Exact error${graphResults.filter((r) => !r.ok).length > 1 ? "s" : ""}:\n${failLines}`;
+            append("assistant", spoken);
+          } else {
+            const followUp: Msg[] = [
+              ...next,
+              { role: "assistant", content: spoken },
+              {
+                role: "user",
+                content: `[graph agent result]\n${graphReport}\n\nThe above includes real data from Felix's Microsoft account (mail/calendar/tasks). Genuinely use it to answer now — don't just confirm you ran the tool. Give Felix the substantive answer, draft, or summary he actually asked for.`,
+              },
+            ];
+            const confirmation = await chat({ data: { messages: followUp.slice(-20) } });
+            spoken = parseToolCalls(confirmation.reply).cleaned || confirmation.reply;
+            append("assistant", spoken);
+          }
         }
 
         if (voiceReply) say(spoken);
       } catch (err) {
-        
-        append(
-          "assistant",
-          err instanceof Error ? err.message : "I couldn't reach the intelligence core, Felix.",
-        );
+        const errText =
+          err instanceof Error ? err.message : "I couldn't reach the intelligence core, Felix.";
+        append("assistant", errText);
+        if (voiceReply) say(errText);
       } finally {
+        setToolProgress(null);
         setThinking(false);
       }
     },
@@ -476,7 +543,9 @@ if (meetingIntent) {
   const voice = useVoice({ onCommand, onWake });
   voiceCtl.current = { suspend: voice.suspend, resume: voice.resume };
 
-  const coreState = thinking
+ const coreState = toolProgress
+  ? "executing"
+  : thinking
     ? "thinking"
     : speaking
       ? "speaking"
@@ -605,7 +674,7 @@ if (meetingIntent) {
             <div className="glass-panel relative flex min-h-[280px] items-center justify-center overflow-hidden p-4 sm:min-h-[360px] xl:min-h-[440px]">
               <div className="absolute inset-0 grid scale-[0.65] place-items-center origin-center sm:scale-[0.85] xl:scale-100">
                 <SubAgentOrbit agents={agents} />
-                <EvaCore state={coreState} level={voice.level} size={300} />
+                <EvaCore state={coreState} level={voice.level}  size={300}  progress={toolProgress ? toolProgress.done / toolProgress.total : undefined}  progressLabel={toolProgress ? `${toolProgress.label} — ${toolProgress.done}/${toolProgress.total}`: undefined }/>
               </div>
               <div className="absolute inset-x-0 bottom-3 px-4">
                 <Waveform

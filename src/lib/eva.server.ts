@@ -230,15 +230,33 @@ async function callGemini(messages: EvaMessage[]) {
 
 export async function callProvider(messages: EvaMessage[]): Promise<string> {
   // provider preference order: OpenRouter → NVIDIA NIM → Groq → Gemini → HuggingFace
-  if (process.env.OPENROUTER_API_KEY) return await callOpenRouter(messages);
-  if (process.env.NVIDIA_API_KEY) return await callNvidia(messages);
-  if (process.env.GROQ_API_KEY) return await callGroq(messages);
-  if (process.env.GOOGLE_GEMINI_API_KEY) return await callGemini(messages);
-  if (process.env.HUGGINGFACE_API_KEY) return await callHuggingFace(messages);
+  const providers: Array<{ name: string; key: string | undefined; call: () => Promise<string> }> = [
+    { name: "OpenRouter", key: process.env.OPENROUTER_API_KEY, call: () => callOpenRouter(messages) },
+    { name: "NVIDIA NIM", key: process.env.NVIDIA_API_KEY, call: () => callNvidia(messages) },
+    { name: "Groq", key: process.env.GROQ_API_KEY, call: () => callGroq(messages) },
+    { name: "Gemini", key: process.env.GOOGLE_GEMINI_API_KEY, call: () => callGemini(messages) },
+    { name: "HuggingFace", key: process.env.HUGGINGFACE_API_KEY, call: () => callHuggingFace(messages) },
+  ];
 
-  throw new Error(
-    "Eva intelligence core is offline: set OPENROUTER_API_KEY or a fallback provider (NVIDIA_API_KEY, GROQ_API_KEY, GOOGLE_GEMINI_API_KEY, or HUGGINGFACE_API_KEY) in your environment.",
-  );
+  const configured = providers.filter((p) => p.key);
+  if (!configured.length) {
+    throw new Error(
+      "Eva intelligence core is offline: set OPENROUTER_API_KEY or a fallback provider (NVIDIA_API_KEY, GROQ_API_KEY, GOOGLE_GEMINI_API_KEY, or HUGGINGFACE_API_KEY) in your environment.",
+    );
+  }
+
+  const failures: string[] = [];
+  for (const provider of configured) {
+    try {
+      return await provider.call();
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      failures.push(`${provider.name}: ${reason}`);
+      // fall through to the next configured provider
+    }
+  }
+
+  throw new Error(`All configured providers failed:\n${failures.join("\n")}`);
 }
 
 const MAX_TOOL_ROUNDS = 6;
